@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+safety_records.db
+yolov8n.pt
+best.pt
+*.jpg
+!static/incidents/placeholder.jpg
+.vscode/
+.idea/

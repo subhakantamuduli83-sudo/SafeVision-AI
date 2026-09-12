@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafeVision AI - Industrial Safety & Compliance Command Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Chart.js for Multi-Metric Historical Graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+        <div class="nav-brand">
+            <div class="logo-icon">🛡️</div>
+            <div class="brand-text">
+                <h1>SafeVision AI <span class="badge-edition">ENTERPRISE</span></h1>
+                <p>Intelligent PPE Compliance, Hazard & Weather Monitoring System</p>
+            </div>
+        </div>
+
+        <div class="nav-status">
+            <div class="status-indicator">
+                <span class="pulse-dot"></span>
+                <span class="status-label">EDGE AI ACTIVE</span>
+            </div>
+            <div class="zone-badge" id="currentZoneBadge">📍 Zone 1 - Main Floor</div>
+            <div class="clock-display" id="clockDisplay">00:00:00</div>
+        </div>
+
+        <div class="nav-actions">
+            <button class="btn btn-demo" id="btnDemoToggle" title="Toggle Demo / Simulation Mode">
+                🧪 <span id="demoStatusText">DEMO: OFF</span>
+            </button>
+            <button class="btn btn-secondary" id="btnAudioTest" title="Test External Speaker Siren">
+                🔊 Test Speaker
+            </button>
+            <button class="btn btn-secondary" id="btnMuteToggle" title="Mute/Unmute Audio Alerts">
+                🔔 Alerts: <span id="muteStatusText">ON</span>
+            </button>
+            <button class="btn btn-primary" id="btnCameraSettings">
+                ⚙️ Camera Source
+            </button>
+        </div>
+    </header>
+
+    <!-- Visual Thermal / Weather Alert Banner (Shown dynamically on High/Critical Heat Risk) -->
+    <div class="visual-alert-bar" id="weatherAlertBanner" style="display: none;">
+        <div class="visual-alert-content">
+            <div class="visual-alert-icon" id="weatherAlertIcon">🔴</div>
+            <div class="visual-alert-details">
+                <div class="visual-alert-title">
+                    <span class="alert-headline" id="weatherAlertHeadline">CRITICAL THERMAL HAZARD DETECTED</span>
+                    <span class="badge-risk-tag" id="weatherAlertRiskTag">CRITICAL</span>
+                </div>
+                <div class="visual-alert-metrics" id="weatherAlertMetrics">
+                    Temperature: <strong>41.5°C</strong> | Humidity: <strong>76%</strong> | Heat Index: <strong>52.3°C</strong>
+                </div>
+                <div class="visual-alert-explanation" id="weatherAlertExplanation">
+                    <strong>Why detected:</strong> Heat Index exceeded critical threshold. Extreme risk of heat exhaustion.
+                </div>
+            </div>
+        </div>
+        <button class="btn btn-sm btn-dismiss" id="btnDismissWeatherAlert">✕</button>
+    </div>
+
+    <!-- Weather API Offline Banner (Shown when API is unreachable) -->
+    <div class="offline-banner" id="weatherOfflineBanner" style="display: none;">
+        <div class="offline-content">
+            <span class="offline-icon">🔴</span>
+            <span><strong>Weather API Offline:</strong> Connection unavailable. Displaying cached data. <span id="offlineLastUpdated"></span></span>
+        </div>
+        <button class="btn btn-sm btn-outline" id="btnRetryWeather">🔄 Retry Connection</button>
+    </div>
+
+    <!-- Demo Mode Active Banner -->
+    <div class="demo-active-banner" id="demoBanner" style="display: none;">
+        <span>⚠️ <strong>DATA MODE: DEMO SIMULATION ACTIVE</strong> — Synthetic values for testing extreme heat anomalies. Real API feed paused.</span>
+        <div class="demo-actions">
+            <button class="btn btn-sm btn-accent" id="btnDemoHeatSpike">🔥 Trigger Heat Spike (43°C)</button>
+            <button class="btn btn-sm btn-secondary" id="btnDemoNormal">🌿 Normal Weather (29°C)</button>
+            <button class="btn btn-sm btn-outline" id="btnDisableDemo">Exit Demo Mode</button>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Container -->
+    <main class="dashboard-grid">
+        
+        <!-- Left Column: Video Feed & Live HUD -->
+        <section class="video-section card">
+            <div class="card-header">
+                <div class="header-left">
+                    <span class="live-tag">● LIVE STREAM</span>
+                    <span class="feed-source-label" id="activeSourceLabel">Source: Camera 0</span>
+                </div>
+                <div class="header-right">
+                    <button class="btn-icon" id="btnRefreshFeed" title="Reconnect Feed">🔄</button>
+                    <button class="btn-icon" id="btnFullscreen" title="Fullscreen">⛶</button>
+                </div>
+            </div>
+
+            <div class="video-container" id="videoWrapper">
+                <img src="/video_feed" id="liveVideoFeed" alt="Live CCTV AI Feed" class="video-player">
+                
+                <!-- Live Emergency Overlay (Shown only during fire/smoke) -->
+                <div class="hazard-alert-banner" id="hazardBanner" style="display: none;">
+                    <div class="hazard-icon">🔥</div>
+                    <div class="hazard-text">
+                        <h3>CRITICAL HAZARD DETECTED</h3>
+                        <p>Fire/Smoke signature detected. Siren activated.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fast Camera Switch Bar -->
+            <div class="quick-source-bar">
+                <form id="quickSourceForm" class="quick-form">
+                    <label>Quick Connect:</label>
+                    <input type="text" id="quickSourceInput" placeholder="DroidCam URL (http://192.168.1.15:4747/video), USB (1), or Webcam (0)" value="0">
+                    <button type="submit" class="btn btn-sm btn-accent">Switch Feed</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Right Column: Metrics & Real-time Incident Feed -->
+        <section class="metrics-section">
+            
+            <!-- KPI Summary Cards (PPE & Floor Safety) -->
+            <div class="kpi-grid">
+                
+                <!-- Compliance Rate -->
+                <div class="kpi-card highlight-card">
+                    <div class="kpi-header">
+                        <span>Compliance Rate</span>
+                        <span class="kpi-icon">📊</span>
+                    </div>
+                    <div class="kpi-body">
+                        <div class="gauge-container">
+                            <span class="kpi-number" id="kpiCompliance">100%</span>
+                        </div>
+                        <div class="kpi-subtext" id="kpiComplianceSub">All workers compliant</div>
+                    </div>
+                </div>
+
+                <!-- Total Workers -->
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span>Workers on Floor</span>
+                        <span class="kpi-icon">👷</span>
+                    </div>
+                    <div class="kpi-body">
+                        <span class="kpi-number" id="kpiWorkers">0</span>
+                        <div class="kpi-subtext"><span id="kpiCompliantWorkers">0</span> Compliant</div>
+                    </div>
+                </div>
+
+                <!-- Active Violations -->
+                <div class="kpi-card" id="cardViolations">
+                    <div class="kpi-header">
+                        <span>Active Violations</span>
+                        <span class="kpi-icon">⚠️</span>
+                    </div>
+                    <div class="kpi-body">
+                        <span class="kpi-number alert-text" id="kpiViolations">0</span>
+                        <div class="kpi-subtext" id="kpiViolationDetails">No active violations</div>
+                    </div>
+                </div>
+
+                <!-- Hazard Status -->
+                <div class="kpi-card" id="cardHazard">
+                    <div class="kpi-header">
+                        <span>Hazard Status</span>
+                        <span class="kpi-icon">🧯</span>
+                    </div>
+                    <div class="kpi-body">
+                        <span class="kpi-badge badge-safe" id="kpiHazardStatus">SAFE</span>
+                        <div class="kpi-subtext">Thermal & smoke clear</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Incident Audit & Live Log Feed -->
+            <div class="incidents-panel card">
+                <div class="card-header">
+                    <div class="header-left">
+                        <h3>Recent Safety Incidents & Evidence Snapshots</h3>
+                    </div>
+                    <div class="header-right">
+                        <a href="/api/export/pdf" target="_blank" class="btn btn-sm btn-outline">📄 Export PDF Audit</a>
+                        <a href="/api/export/csv" class="btn btn-sm btn-outline">📊 Export CSV</a>
+                    </div>
+                </div>
+
+                <div class="incidents-list" id="incidentsContainer">
+                    <div class="empty-state">Loading incident logs...</div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Real-Time Weather Monitoring & Visual Alert Command Section -->
+    <section class="weather-dashboard-section">
+        <div class="weather-panel card">
+            
+            <!-- Weather Panel Header -->
+            <div class="weather-panel-header">
+                <div class="weather-title-block">
+                    <div class="weather-badge-icon">🌤️</div>
+                    <div>
+                        <h2>Real-Time Environmental & Heat Stress Monitoring</h2>
+                        <div class="weather-location-meta">
+                            <span id="weatherLocationName">📍 Bhubaneswar, Odisha, India</span>
+                            <span class="sep">•</span>
+                            <span>Data Source: <strong id="weatherDataSourceTag" class="source-tag">Real-Time Weather API</strong></span>
+                            <span class="sep">•</span>
+                            <span>Last Updated: <strong id="weatherLastUpdatedText">--</strong></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="weather-header-actions">
+                    <button class="btn btn-sm btn-primary" id="btnRefreshWeatherNow">
+                        <span id="refreshSpinner" class="spinner-icon">🔄</span> Refresh Now
+                    </button>
+                </div>
+            </div>
+
+            <!-- Weather Metric 4-Card Grid -->
+            <div class="weather-kpi-grid">
+                
+                <!-- 1. Temperature Card -->
+                <div class="weather-card">
+                    <div class="weather-card-top">
+                        <span class="weather-card-label">CURRENT TEMPERATURE</span>
+                        <span class="weather-card-icon">🌡️</span>
+                    </div>
+                    <div class="weather-card-value">
+                        <span class="metric-val" id="valTemperature">--.-</span>
+                        <span class="metric-unit">°C</span>
+                    </div>
+                    <div class="weather-card-footer">
+                        <span class="status-pill status-normal" id="badgeTempStatus">Optimal</span>
+                        <span class="trend-indicator" id="trendIndicator">→ Steady</span>
+                    </div>
+                </div>
+
+                <!-- 2. Relative Humidity Card -->
+                <div class="weather-card">
+                    <div class="weather-card-top">
+                        <span class="weather-card-label">RELATIVE HUMIDITY</span>
+                        <span class="weather-card-icon">💧</span>
+                    </div>
+                    <div class="weather-card-value">
+                        <span class="metric-val" id="valHumidity">--</span>
+                        <span class="metric-unit">%</span>
+                    </div>
+                    <div class="weather-card-footer">
+                        <span class="status-pill status-info" id="badgeHumidityStatus">Comfortable</span>
+                        <span class="sub-metric" id="valWindPressure">💨 0.0 km/h | 1013 hPa</span>
+                    </div>
+                </div>
+
+                <!-- 3. NOAA Heat Index Card -->
+                <div class="weather-card highlight-weather-card">
+                    <div class="weather-card-top">
+                        <span class="weather-card-label">CALCULATED HEAT INDEX</span>
+                        <span class="weather-card-icon">☀️</span>
+                    </div>
+                    <div class="weather-card-value">
+                        <span class="metric-val" id="valHeatIndex">--.-</span>
+                        <span class="metric-unit">°C</span>
+                    </div>
+                    <div class="weather-card-footer">
+                        <div class="formula-tooltip" id="formulaTooltip" title="NOAA / Rothfusz Equation">
+                            <span id="formulaText">Temp + Humidity → Heat Index</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Thermal Risk Level Card -->
+                <div class="weather-card" id="cardRiskLevel">
+                    <div class="weather-card-top">
+                        <span class="weather-card-label">OCCUPATIONAL RISK LEVEL</span>
+                        <span class="weather-card-icon">⚠️</span>
+                    </div>
+                    <div class="weather-card-value">
+                        <span class="risk-badge-display risk-low" id="valRiskBadge">🟢 LOW</span>
+                    </div>
+                    <div class="weather-card-footer">
+                        <span class="sub-metric" id="valRiskCondition">Clear Atmospheric State</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Explainable Anomaly Reasoning Box -->
+            <div class="explainable-reason-box">
+                <div class="explainable-header">
+                    <span class="explainable-icon">🧠</span>
+                    <h4>Explainable Anomaly & Risk Breakdown</h4>
+                    <span class="explainable-sub">Real-time multi-factor reasoning</span>
+                </div>
+                <div class="explainable-body">
+                    <ul class="reason-bullets" id="reasonsListContainer">
+                        <li>Connecting to real-time meteorological feed...</li>
+                    </ul>
+                    <div class="reason-conclusion" id="conclusionContainer">
+                        Environmental conditions are stable.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interactive Historical Chart Section -->
+            <div class="weather-chart-container">
+                <div class="chart-header">
+                    <h4>📈 Real-Time Environmental Trends (Temperature, Humidity & Heat Index vs. Time)</h4>
+                    <div class="chart-legend-custom">
+                        <span class="legend-item"><span class="legend-color color-temp"></span> Temperature (°C)</span>
+                        <span class="legend-item"><span class="legend-color color-humidity"></span> Humidity (%)</span>
+                        <span class="legend-item"><span class="legend-color color-heatindex"></span> Heat Index (°C)</span>
+                    </div>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="weatherHistoryChart"></canvas>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Camera Settings Modal -->
+    <div class="modal-backdrop" id="cameraModal" style="display: none;">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2>Configure CCTV & Edge Camera</h2>
+                <button class="modal-close" id="btnCloseModal">&times;</button>
+            </div>
+            <form id="cameraConfigForm" class="modal-body">
+                <div class="form-group">
+                    <label>Camera Source Type:</label>
+                    <select id="sourceSelect" class="form-control">
+                        <option value="droidcam-wifi">📱 Mobile Phone - DroidCam (Wi-Fi)</option>
+                        <option value="droidcam-usb">🔌 Mobile Phone - DroidCam / Iriun (USB Mode - Zero Lag)</option>
+                        <option value="webcam">💻 Laptop Webcam (Index 0)</option>
+                        <option value="ipwebcam">📱 Mobile Phone - IP Webcam (Port 8080)</option>
+                        <option value="custom">🌐 Custom RTSP / HTTP URL / File</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="urlGroup">
+                    <label id="urlInputLabel">DroidCam Stream URL:</label>
+                    <input type="text" id="modalUrlInput" class="form-control" placeholder="http://192.168.1.15:4747/video" value="http://192.168.1.15:4747/video">
+                    <small class="helper-text" id="cameraHelperText">💡 <b>DroidCam Wi-Fi:</b> Open DroidCam on your phone and enter the IP & Port shown on your screen (e.g. <code>http://192.168.1.15:4747/video</code>).</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Factory Floor / Zone Name:</label>
+                    <input type="text" id="zoneInput" class="form-control" placeholder="Zone 1 - Main Floor" value="Zone 1 - Main Assembly Floor">
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btnCancelModal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Apply & Connect</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Snapshot Zoom Modal -->
+    <div class="modal-backdrop" id="snapshotModal" style="display: none;">
+        <div class="modal-box modal-lg">
+            <div class="modal-header">
+                <h2 id="snapshotModalTitle">Incident Evidence Snapshot</h2>
+                <button class="modal-close" id="btnCloseSnapshot">&times;</button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="snapshotZoomImg" src="" alt="Incident Snapshot" class="zoom-image">
+                <p id="snapshotModalDetails" class="snapshot-caption"></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
+
