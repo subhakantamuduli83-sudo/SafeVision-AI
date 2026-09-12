@@ -1,6 +1,14 @@
 # 🛡️ SafeVision AI: Industrial Safety Gear Compliance & Hazard Detection
 
+![SafeVision AI Cover](assets/cover.jpg)
+
 An AI-powered edge-to-cloud industrial safety monitoring system built for the **STPI & EmTek BPUT Hackathon**.
+
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi)
+![YOLOv8](https://img.shields.io/badge/YOLOv8-Ultralytics-00FFFF?logo=yolo)
+![OpenCV](https://img.shields.io/badge/OpenCV-Computer%20Vision-5C3EE8?logo=opencv)
+![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?logo=sqlite)
 
 ---
 
