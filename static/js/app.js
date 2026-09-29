@@ -737,8 +737,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const mediaUploadInput = document.getElementById('mediaUploadInput');
     const btnUploadMedia = document.getElementById('btnUploadMedia');
-    const btnTestFirePreset = document.getElementById('btnTestFirePreset');
-    const btnTestLighterPreset = document.getElementById('btnTestLighterPreset');
     const btnWebcamPreset = document.getElementById('btnWebcamPreset');
 
     if (btnUploadMedia && mediaUploadInput) {
@@ -767,28 +765,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Upload error:', err);
                 btnUploadMedia.innerText = originalText;
             }
-        });
-    }
-
-    if (btnTestFirePreset) {
-        btnTestFirePreset.addEventListener('click', async () => {
-            const formData = new FormData();
-            formData.append('source', 'static/images/test/fire_pillar.png');
-            formData.append('zone', 'Fire Testing Area');
-            await fetch('/api/settings', { method: 'POST', body: formData });
-            quickSourceInput.value = 'static/images/test/fire_pillar.png';
-            liveVideoFeed.src = `/video_feed?t=${new Date().getTime()}`;
-        });
-    }
-
-    if (btnTestLighterPreset) {
-        btnTestLighterPreset.addEventListener('click', async () => {
-            const formData = new FormData();
-            formData.append('source', 'static/images/test/lighter_flame.png');
-            formData.append('zone', 'Combustion Jet Zone');
-            await fetch('/api/settings', { method: 'POST', body: formData });
-            quickSourceInput.value = 'static/images/test/lighter_flame.png';
-            liveVideoFeed.src = `/video_feed?t=${new Date().getTime()}`;
         });
     }
 

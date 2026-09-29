@@ -27,7 +27,7 @@ class SafetyDetector:
         self.model = None
         self.custom_ppe_model = False
         self.last_snapshot_time = {}
-        self.snapshot_cooldown = 1.5
+        self.snapshot_cooldown = 10.0
         self.sensitivity_level = "ultra"  # 'ultra', 'high', 'standard', or 'custom'
         self.ppe_strictness = "ultra"
 
@@ -149,17 +149,17 @@ class SafetyDetector:
             if lvl in ["ultra", "ultra_sensitive", "zero_tolerance", "critical"]:
                 self.sensitivity_level = "ultra"
                 self.conf_thresh = 0.15
-                self.snapshot_cooldown = 1.5
+                self.snapshot_cooldown = 8.0
                 self.ppe_strictness = "ultra"
             elif lvl in ["high", "strict", "elevated"]:
                 self.sensitivity_level = "high"
                 self.conf_thresh = 0.25
-                self.snapshot_cooldown = 2.5
+                self.snapshot_cooldown = 12.0
                 self.ppe_strictness = "high"
             elif lvl in ["standard", "normal", "balanced"]:
                 self.sensitivity_level = "standard"
                 self.conf_thresh = 0.35
-                self.snapshot_cooldown = 4.0
+                self.snapshot_cooldown = 16.0
                 self.ppe_strictness = "standard"
             elif lvl == "custom":
                 self.sensitivity_level = "custom"
@@ -440,20 +440,28 @@ class SafetyDetector:
         flame_mask[(mask_flame_hsv > 0) & cond_rgb & cond_ycrcb] = 255
         
         # Morphological bridging & dilation to envelope entire fire zone (including white-hot core)
-        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         closed = cv2.morphologyEx(flame_mask, cv2.MORPH_CLOSE, kernel_close)
         
-        kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 17))
-        dilated = cv2.dilate(closed, kernel_dilate, iterations=2)
+        kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+        dilated = cv2.dilate(closed, kernel_dilate, iterations=1)
         
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         raw_boxes = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area >= 75:
+            if area >= 350:
                 x, y_box, box_w, box_h = cv2.boundingRect(cnt)
-                raw_boxes.append((x, y_box, x + box_w, y_box + box_h, area, "FLAME"))
+                if box_w >= 14 and box_h >= 14:
+                    patch_hsv = hsv[y_box:y_box+box_h, x:x+box_w]
+                    patch_r = r[y_box:y_box+box_h, x:x+box_w]
+                    if patch_hsv.size > 0 and patch_r.size > 0:
+                        peak_v = int(np.max(patch_hsv[:, :, 2]))
+                        peak_r = int(np.max(patch_r))
+                        # Real flames are self-luminous and peak at intense brightness
+                        if peak_v >= 210 and peak_r >= 215:
+                            raw_boxes.append((x, y_box, x + box_w, y_box + box_h, area, "FLAME"))
                 
         if not raw_boxes:
             return []
@@ -468,7 +476,7 @@ class SafetyDetector:
                 # Merge if boxes overlap by >= 8% of area or are adjacent
                 inter_w = max(0, min(bx2, mx2) - max(bx1, mx1))
                 inter_h = max(0, min(by2, my2) - max(by1, my1))
-                if (inter_w * inter_h) > 0.08 * ((bx2-bx1)*(by2-by1)):
+                if (inter_w * inter_h) > 0.06 * ((bx2-bx1)*(by2-by1)):
                     merged[i] = (min(bx1, mx1), min(by1, my1), max(bx2, mx2), max(by2, my2), max(b_area, m_area), "FLAME")
                     matched = True
                     break
@@ -1229,14 +1237,17 @@ class SafetyDetector:
 
     def _save_incident_snapshot(self, frame, zone, incident_type, severity, details,
                                 coord_x: float = 0.5, coord_y: float = 0.5, category: str = "PPE"):
-        """Throttles, saves snapshot, logs to DB, and dispatches to Telegram."""
+        """Throttles, saves snapshot, logs to DB, dispatches to Telegram, and auto-prunes disk storage."""
         now = time.time()
         last_time = self.last_snapshot_time.get(incident_type, 0)
         
-        if (now - last_time) >= self.snapshot_cooldown:
+        # Industrial throttle: fire and critical hazards have at least 10s cooldown
+        cooldown = max(self.snapshot_cooldown, 10.0 if severity == "CRITICAL" else self.snapshot_cooldown)
+        
+        if (now - last_time) >= cooldown:
             self.last_snapshot_time[incident_type] = now
             filename = f"incident_{int(now)}.jpg"
-            rel_path = os.path.join("static", "incidents", filename)
+            rel_path = os.path.join(SNAPSHOT_DIR, filename)
             cv2.imwrite(rel_path, frame)
             
             # 1. Log in SQLite Database with spatial coordinates
@@ -1247,3 +1258,19 @@ class SafetyDetector:
 
             # 2. Instant Telegram Dispatch
             notifier.dispatch_incident_photo(rel_path, zone, incident_type, severity, details)
+
+            # 3. Disk Maintenance: Auto-prune old snapshot files to keep maximum 50 images
+            try:
+                snapshots = [
+                    os.path.join(SNAPSHOT_DIR, f) for f in os.listdir(SNAPSHOT_DIR)
+                    if f.startswith("incident_") and f.endswith(".jpg")
+                ]
+                if len(snapshots) > 50:
+                    snapshots.sort(key=os.path.getmtime)
+                    for old_file in snapshots[:-50]:
+                        try:
+                            os.remove(old_file)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
