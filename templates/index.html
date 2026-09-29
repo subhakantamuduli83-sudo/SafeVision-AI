@@ -7,22 +7,23 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=3.1">
     <!-- Chart.js for Multi-Metric Historical Graphs -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <!-- Top Navigation Bar -->
-    <header class="navbar">
+    <header class="navbar" id="mainNavbar">
+        <!-- 1. Left: Brand Logo & Title -->
         <div class="nav-brand">
             <div class="logo-icon">🛡️</div>
             <div class="brand-text">
                 <h1>SafeVision AI <span class="badge-edition">ENTERPRISE</span></h1>
-                <p>Intelligent PPE Compliance, Hazard & Weather Monitoring System</p>
             </div>
         </div>
 
-        <div class="nav-status">
+        <!-- 2. Center: Real-time Status Badges -->
+        <div class="nav-status" id="navStatusGroup">
             <div class="status-indicator">
                 <span class="pulse-dot"></span>
                 <span class="status-label">EDGE AI ACTIVE</span>
@@ -31,21 +32,80 @@
             <div class="clock-display" id="clockDisplay">00:00:00</div>
         </div>
 
-        <div class="nav-actions">
-            <button class="btn btn-demo" id="btnDemoToggle" title="Toggle Demo / Simulation Mode">
-                🧪 <span id="demoStatusText">DEMO: OFF</span>
+        <!-- 3. Right: All Action Controls in 1 Line -->
+        <div class="nav-actions" id="navActions">
+            <button class="btn btn-sensitivity" id="btnQuickSensitivity" title="Cycle AI Detection Sensitivity: Ultra / High / Standard">
+                ⚡ <span id="navSensitivityText">ULTRA</span>
             </button>
-            <button class="btn btn-secondary" id="btnAudioTest" title="Test External Speaker Siren">
-                🔊 Test Speaker
+            <button class="btn btn-autopilot" id="btnAutoPilotToggle" title="Toggle 24/7 Autonomous Supervisor Away Mode">
+                🤖 <span id="autoPilotText">AUTO: OFF</span>
             </button>
-            <button class="btn btn-secondary" id="btnMuteToggle" title="Mute/Unmute Audio Alerts">
-                🔔 Alerts: <span id="muteStatusText">ON</span>
+            <button class="btn btn-secondary" id="btnMasterControlModal" title="Open Master Feature Switchboard">
+                🎛️ Controls
             </button>
-            <button class="btn btn-primary" id="btnCameraSettings">
-                ⚙️ Camera Source
+            <button class="btn btn-copilot" id="btnOpenCopilot" title="Open AI Safety Copilot">
+                🤖 Copilot
             </button>
+            <button class="btn btn-secondary" id="btnOpenScorecard" title="View Executive Safety Scorecard & 2D Heatmap">
+                🏆 Scorecard
+            </button>
+            <button class="btn btn-secondary btn-gallery" id="btnOpenFeatureGallery" title="Explore All Safety Features & Dedicated Siren Profiles">
+                📸 Features
+            </button>
+            
+            <!-- Quick Tools Dropdown Menu -->
+            <div class="dropdown-wrapper" id="toolsDropdownWrapper">
+                <button class="btn btn-secondary dropdown-trigger-btn" id="btnToolsMenu" type="button" title="More Safety & Configuration Tools">
+                    ⚙️ Tools ▾
+                </button>
+                <div class="dropdown-popup-menu" id="toolsMenuContent">
+                    <button type="button" class="dropdown-menu-item" id="btnMenuFeatureGallery">
+                        📸 Features & Sirens Gallery
+                    </button>
+                    <button type="button" class="dropdown-menu-item" id="btnGateModeToggle">
+                        🚪 <span id="gateModeText">Turnstile Gate Mode</span>
+                    </button>
+                    <button type="button" class="dropdown-menu-item" id="btnIndustrialModulesModal">
+                        🏗️ Site Safety Modules
+                    </button>
+                    <button type="button" class="dropdown-menu-item" id="btnDangerZoneModal">
+                        🛑 Danger Geofence
+                    </button>
+                    <button type="button" class="dropdown-menu-item" id="btnTelegramModal">
+                        📱 Mobile Telegram
+                    </button>
+                    <button type="button" class="dropdown-menu-item" id="btnDemoToggle">
+                        🧪 <span id="demoStatusText">Heat Demo Simulation</span>
+                    </button>
+                    <button type="button" class="dropdown-menu-item" id="btnAudioTest">
+                        🔊 Test Speaker Siren
+                    </button>
+                    <button type="button" class="dropdown-menu-item" id="btnMuteToggle">
+                        🔔 <span id="muteStatusText">Mute/Unmute Siren</span>
+                    </button>
+                    <button type="button" class="dropdown-menu-item" id="btnCameraSettings">
+                        📹 Camera Stream Setup
+                    </button>
+                </div>
+            </div>
         </div>
     </header>
+
+    <!-- Auto-Pilot / Supervisor Away Active Banner -->
+    <div class="autopilot-active-banner" id="autoPilotBanner" style="display: none;">
+        <div class="autopilot-banner-content">
+            <span class="autopilot-pulse-icon">🤖</span>
+            <div class="autopilot-banner-text">
+                <strong>24/7 AUTO-PILOT ENGAGED (SUPERVISOR AWAY MODE):</strong>
+                <span>All autonomous vision detectors, multi-channel sirens & mobile Telegram photo dispatches are armed.</span>
+            </div>
+        </div>
+        <div class="autopilot-banner-actions">
+            <button class="btn btn-sm btn-outline-light" id="btnDisarmAutoPilot">✕ Disarm Auto Mode</button>
+        </div>
+    </div>
+
+
 
     <!-- Visual Thermal / Weather Alert Banner (Shown dynamically on High/Critical Heat Risk) -->
     <div class="visual-alert-bar" id="weatherAlertBanner" style="display: none;">
@@ -95,6 +155,7 @@
                 <div class="header-left">
                     <span class="live-tag">● LIVE STREAM</span>
                     <span class="feed-source-label" id="activeSourceLabel">Source: Camera 0</span>
+                    <span class="mode-badge" id="liveModeBadge" style="display: none;">🚪 GATE INSPECTOR</span>
                 </div>
                 <div class="header-right">
                     <button class="btn-icon" id="btnRefreshFeed" title="Reconnect Feed">🔄</button>
@@ -105,12 +166,12 @@
             <div class="video-container" id="videoWrapper">
                 <img src="/video_feed" id="liveVideoFeed" alt="Live CCTV AI Feed" class="video-player">
                 
-                <!-- Live Emergency Overlay (Shown only during fire/smoke) -->
+                <!-- Live Emergency Overlay (Shown only during fire/smoke/fall) -->
                 <div class="hazard-alert-banner" id="hazardBanner" style="display: none;">
-                    <div class="hazard-icon">🔥</div>
+                    <div class="hazard-icon" id="hazardIcon">🔥</div>
                     <div class="hazard-text">
-                        <h3>CRITICAL HAZARD DETECTED</h3>
-                        <p>Fire/Smoke signature detected. Siren activated.</p>
+                        <h3 id="hazardTitle">CRITICAL HAZARD DETECTED</h3>
+                        <p id="hazardDesc">Fire/Smoke signature detected. Siren activated.</p>
                     </div>
                 </div>
             </div>
@@ -121,6 +182,11 @@
                     <label>Quick Connect:</label>
                     <input type="text" id="quickSourceInput" placeholder="DroidCam URL (http://192.168.1.15:4747/video), USB (1), or Webcam (0)" value="0">
                     <button type="submit" class="btn btn-sm btn-accent">Switch Feed</button>
+                    <input type="file" id="mediaUploadInput" accept="image/*,video/*" style="display: none;">
+                    <button type="button" class="btn btn-sm btn-outline" id="btnUploadMedia" title="Upload local image or video to test AI inspection">📁 Upload Photo</button>
+                    <button type="button" class="btn btn-sm btn-outline" id="btnTestFirePreset" title="Inspect Fire Pillar Test Image" style="color: #ff5252; border-color: #ff5252;">🔥 Test Fire</button>
+                    <button type="button" class="btn btn-sm btn-outline" id="btnTestLighterPreset" title="Inspect Lighter Flame Test Image" style="color: #ffab40; border-color: #ffab40;">⚡ Test Lighter</button>
+                    <button type="button" class="btn btn-sm btn-outline" id="btnWebcamPreset" title="Reset to Laptop Webcam">📷 Webcam</button>
                 </form>
             </div>
         </section>
@@ -169,17 +235,30 @@
                     </div>
                 </div>
 
-                <!-- Hazard Status -->
+                <!-- Safety Hazard Status -->
                 <div class="kpi-card" id="cardHazard">
                     <div class="kpi-header">
-                        <span>Hazard Status</span>
-                        <span class="kpi-icon">🧯</span>
+                        <span>Floor Safety Status</span>
+                        <span class="kpi-icon">🛡️</span>
                     </div>
                     <div class="kpi-body">
                         <span class="kpi-badge badge-safe" id="kpiHazardStatus">SAFE</span>
-                        <div class="kpi-subtext">Thermal & smoke clear</div>
+                        <div class="kpi-subtext" id="kpiHazardDetails">All modules clear</div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Multi-Hazard Live Telemetry Status Strip -->
+            <div class="telemetry-status-strip">
+                <span class="tele-tag" id="tagFall">🚶 Fall: Normal</span>
+                <span class="tele-tag" id="tagGeofence">🛑 Geofence: Secure</span>
+                <span class="tele-tag" id="tagHeight">🏗️ Height: Secure</span>
+                <span class="tele-tag" id="tagDropZone">📦 Drop Zone: Clear</span>
+                <span class="tele-tag" id="tagConfined">🚪 Confined: 0 Safe</span>
+                <span class="tele-tag" id="tagHotWork">⚡ Hot Work: Clear</span>
+                <span class="tele-tag" id="tagTrench">⚠️ Trench: Setback Safe</span>
+                <span class="tele-tag" id="tagProximity">🚜 Proximity: Clear</span>
+                <span class="tele-tag" id="tagNight">🌙 Night Guard: Off</span>
             </div>
 
             <!-- Incident Audit & Live Log Feed -->
@@ -189,8 +268,8 @@
                         <h3>Recent Safety Incidents & Evidence Snapshots</h3>
                     </div>
                     <div class="header-right">
-                        <a href="/api/export/pdf" target="_blank" class="btn btn-sm btn-outline">📄 Export PDF Audit</a>
-                        <a href="/api/export/csv" class="btn btn-sm btn-outline">📊 Export CSV</a>
+                        <a href="/api/export/pdf" target="_blank" class="btn btn-sm btn-outline">📄 PDF Audit</a>
+                        <a href="/api/export/csv" class="btn btn-sm btn-outline">📊 CSV</a>
                     </div>
                 </div>
 
@@ -207,7 +286,6 @@
     <section class="weather-dashboard-section">
         <div class="weather-panel card">
             
-            <!-- Weather Panel Header -->
             <div class="weather-panel-header">
                 <div class="weather-title-block">
                     <div class="weather-badge-icon">🌤️</div>
@@ -229,7 +307,6 @@
                 </div>
             </div>
 
-            <!-- Weather Metric 4-Card Grid -->
             <div class="weather-kpi-grid">
                 
                 <!-- 1. Temperature Card -->
@@ -332,7 +409,179 @@
         </div>
     </section>
 
-    <!-- Camera Settings Modal -->
+    <!-- ================= MODALS & DRAWERS ================= -->
+
+    <!-- 1. AI Safety Copilot Modal -->
+    <div class="modal-backdrop" id="copilotModal" style="display: none;">
+        <div class="modal-box modal-lg copilot-box">
+            <div class="modal-header">
+                <div class="modal-title-with-badge">
+                    <h2>🤖 SafeVision AI Copilot</h2>
+                    <span class="badge-edition">OSHA / ISO-45001 ADVISOR</span>
+                </div>
+                <button class="modal-close" id="btnCloseCopilot">&times;</button>
+            </div>
+            <div class="copilot-chat-body" id="copilotChatBody">
+                <div class="chat-msg ai-msg">
+                    <div class="msg-avatar">🤖</div>
+                    <div class="msg-content">
+                        <p><strong>Hello Supervisor!</strong> I am your AI Safety Copilot. Ask me anything about floor compliance, OSHA regulations, recent violation trends, or heat safety recommendations.</p>
+                    </div>
+                </div>
+            </div>
+            <!-- Suggested Quick Chips -->
+            <div class="copilot-chips">
+                <button class="chip-btn" data-query="Give me an executive safety summary of today's shift.">📋 Shift Summary</button>
+                <button class="chip-btn" data-query="Explain OSHA 1926 harness requirements for working at heights.">🏗️ Height Harness</button>
+                <button class="chip-btn" data-query="What is the OSHA rule for crane suspended loads and drop zones?">📦 Crane Drop Zone</button>
+                <button class="chip-btn" data-query="What are the permit rules and stay limits for confined spaces?">🚪 Confined Spaces</button>
+                <button class="chip-btn" data-query="What is the 35-foot rule and fire extinguisher requirement for hot work?">🔥 Hot Work & Welding</button>
+                <button class="chip-btn" data-query="What is the safe setback distance for excavations and trenches?">⚠️ Trench Margins</button>
+                <button class="chip-btn" data-query="Explain our emergency protocol for Man-Down or Worker Falls.">🚨 Fall Protocol</button>
+            </div>
+            <form id="copilotForm" class="copilot-input-bar">
+                <input type="text" id="copilotInput" placeholder="Ask AI Safety Copilot a question..." autocomplete="off">
+                <button type="submit" class="btn btn-primary" id="btnSendCopilot">Send</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. Executive Safety Scorecard & 2D Spatial Heatmap Modal -->
+    <div class="modal-backdrop" id="scorecardModal" style="display: none;">
+        <div class="modal-box modal-lg scorecard-box">
+            <div class="modal-header">
+                <h2>🏆 Plant Safety Scorecard & 2D Incident Heatmap</h2>
+                <button class="modal-close" id="btnCloseScorecard">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Scorecard Top KPI Grid -->
+                <div class="scorecard-kpi-grid">
+                    <div class="score-card-item">
+                        <span class="score-label">SAFETY COMPLIANCE GRADE</span>
+                        <div class="score-big-badge" id="scGradeBadge">A+</div>
+                        <span class="score-desc" id="scGradeDesc">EXEMPLARY COMPLIANCE</span>
+                    </div>
+                    <div class="score-card-item">
+                        <span class="score-label">OVERALL SAFETY SCORE</span>
+                        <div class="score-number" id="scScoreNumber">98.5</div>
+                        <span class="score-sub">out of 100.0</span>
+                    </div>
+                    <div class="score-card-item">
+                        <span class="score-label">ZERO-ACCIDENT STREAK</span>
+                        <div class="score-number" id="scStreakDays">14</div>
+                        <span class="score-sub">Consecutive Safe Days</span>
+                    </div>
+                    <div class="score-card-item">
+                        <span class="score-label">OSHA BENCHMARK RATE</span>
+                        <div class="score-number" id="scOshaRate">99.2%</div>
+                        <span class="score-sub">Standard Met</span>
+                    </div>
+                </div>
+
+                <!-- 2D Spatial Incident Heatmap Canvas -->
+                <div class="heatmap-section">
+                    <div class="heatmap-header">
+                        <h4>🗺️ 2D Floor Plan Violation Heatmap (Spatial Incident Hotspots)</h4>
+                        <div class="heatmap-legend">
+                            <span class="legend-dot dot-ppe">● PPE</span>
+                            <span class="legend-dot dot-fall">● Fall</span>
+                            <span class="legend-dot dot-perimeter">● Geofence</span>
+                            <span class="legend-dot dot-fire">● Fire</span>
+                            <span class="legend-dot dot-distraction">● Distraction</span>
+                        </div>
+                    </div>
+                    <div class="heatmap-canvas-container">
+                        <canvas id="heatmapCanvas" width="600" height="320"></canvas>
+                    </div>
+                    <small class="helper-text text-center">💡 Circles represent spatial coordinates (x, y) where violations were triggered by Edge AI cameras.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Danger Zone Geofence Modal -->
+    <div class="modal-backdrop" id="dangerZoneModal" style="display: none;">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2>🛑 Virtual Danger Zone Geofencing</h2>
+                <button class="modal-close" id="btnCloseDangerZone">&times;</button>
+            </div>
+            <form id="dangerZoneForm" class="modal-body">
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="chkDangerEnable">
+                        <strong>Enable Virtual Danger Geofence</strong>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>Perimeter Zone Name:</label>
+                    <input type="text" id="dangerZoneNameInput" class="form-control" value="Heavy Machinery Perimeter">
+                </div>
+                <div class="form-group">
+                    <label>Quick Preset Geofence Region:</label>
+                    <select id="dangerPresetSelect" class="form-control">
+                        <option value="right">🔴 Top-Right Machine Perimeter (Default)</option>
+                        <option value="left">🔴 Left Conveyor / Robotic Cell</option>
+                        <option value="bottom">🔴 Lower Crossing Danger Zone</option>
+                        <option value="center">🔴 Center Assembly Exclusion Zone</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btnCancelDangerZone">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Geofence</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 4. Telegram Mobile Alerts Modal -->
+    <div class="modal-backdrop" id="telegramModal" style="display: none;">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2>📱 Instant Mobile Telegram Dispatcher</h2>
+                <button class="modal-close" id="btnCloseTelegram">&times;</button>
+            </div>
+            <form id="telegramForm" class="modal-body">
+                <p class="modal-desc">Receive real-time photo snapshots and incident alerts directly to your phone when violations happen.</p>
+                
+                <!-- Quick 3-Step Setup Guide Banner -->
+                <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 0.78rem; line-height: 1.45;">
+                    <strong style="color: #38BDF8; display: block; margin-bottom: 4px;">⚡ 1-Minute Telegram Setup Guide:</strong>
+                    <ol style="margin-left: 18px; color: #CBD5E1;">
+                        <li>Open Telegram & search for <b>@BotFather</b> &rarr; send <code>/newbot</code> &rarr; copy the API token.</li>
+                        <li>Search for <b>@userinfobot</b> &rarr; send any text &rarr; copy your numeric <b>Id</b>.</li>
+                        <li><b>Crucial:</b> Open your newly created bot in Telegram and tap <b>START</b>.</li>
+                    </ol>
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="chkTelegramEnable">
+                        <strong>Enable Mobile Telegram Alert Dispatch</strong>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>Telegram Bot Token:</label>
+                    <input type="password" id="tgBotTokenInput" class="form-control" placeholder="123456789:ABCdefGHIjkLMNopQRstUVw">
+                </div>
+                <div class="form-group">
+                    <label>Telegram Chat ID:</label>
+                    <input type="text" id="tgChatIdInput" class="form-control" placeholder="e.g. 987654321">
+                </div>
+                <div class="telegram-test-box" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                    <button type="button" class="btn btn-outline" id="btnTestTelegram">🚀 Send Live Alert to Phone</button>
+                    <button type="button" class="btn btn-outline" id="btnSimulateTelegram" style="border-color: #38BDF8; color: #38BDF8;">🧪 Test Demo Dispatch</button>
+                    <div id="tgTestStatus" class="test-status" style="width: 100%; margin-top: 6px; font-size: 0.78rem;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btnCancelTelegram">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Configuration</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 5. Camera Settings Modal -->
     <div class="modal-backdrop" id="cameraModal" style="display: none;">
         <div class="modal-box">
             <div class="modal-header">
@@ -370,7 +619,997 @@
         </div>
     </div>
 
-    <!-- Snapshot Zoom Modal -->
+    <!-- 5. Master Feature Switchboard & Auto-Pilot Control Modal -->
+    <div class="modal-backdrop" id="masterControlModal" style="display: none;">
+        <div class="modal-box modal-xl master-switchboard-box">
+            <div class="modal-header">
+                <div class="modal-title-with-badge">
+                    <h2>🎛️ Master Feature Switchboard & Auto-Pilot</h2>
+                    <span class="badge-edition">100% GRANULAR SUPERVISOR CONTROL</span>
+                </div>
+                <div class="modal-header-actions">
+                    <button type="button" class="btn btn-sm btn-modal-back" id="btnBackMasterControl" title="Back to Dashboard">
+                        ← Back / Close
+                    </button>
+                    <button class="modal-close" id="btnCloseMasterControl" title="Close Switchboard (Back to Dashboard)">✕</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                
+                <!-- Quick 1-Click Preset Operational Profiles -->
+                <div class="preset-selection-panel">
+                    <div class="preset-label">⚡ 1-Click Operational Shift Presets:</div>
+                    <div class="preset-chips-grid">
+                        <button type="button" class="preset-btn btn-preset-auto" data-preset="auto_pilot" title="Arms all detectors, physical sirens & mobile alerts when supervisor leaves the control room">
+                            🤖 Supervisor Away (Full Auto)
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="construction">
+                            🏗️ Construction Site
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="hot_work_plant">
+                            ⚡ Hot Work Plant
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="clean_ppe_only">
+                            🛡️ Clean PPE Only
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="night_guard">
+                            🌙 Night Guard
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="all_on">
+                            🚀 Arm All Features
+                        </button>
+                        <button type="button" class="preset-btn btn-preset-off" data-preset="all_off">
+                            🧹 Disarm All
+                        </button>
+                    </div>
+                </div>
+
+                <!-- AI Vision Detection Sensitivity & Precision Control Panel -->
+                <div class="sensitivity-panel">
+                    <div class="sensitivity-panel-header">
+                        <div class="sensitivity-title-group">
+                            <span class="sensitivity-icon">⚡</span>
+                            <div>
+                                <h3 class="sensitivity-title">AI Vision Sensitivity & Zero-Tolerance Strictness</h3>
+                                <p class="sensitivity-desc">Live control over neural confidence, violation capture response time, and PPE detection strictness.</p>
+                            </div>
+                        </div>
+                        <div class="sensitivity-badge-wrap">
+                            <span class="sensitivity-live-pill" id="sensitivityLivePill">
+                                <span class="pulse-indicator"></span>
+                                <span id="sensitivityPillText">ULTRA STRICT (15% CONF)</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="sensitivity-body-grid">
+                        <div class="sensitivity-mode-selector">
+                            <label class="sens-label">Operational Sensitivity Level:</label>
+                            <div class="sens-button-group">
+                                <button type="button" class="btn-sens-preset" data-sens="standard">
+                                    <span class="sens-icon">🟢</span>
+                                    <span class="sens-name">Standard</span>
+                                    <span class="sens-sub">35% Conf | 4s Cooldown</span>
+                                </button>
+                                <button type="button" class="btn-sens-preset" data-sens="high">
+                                    <span class="sens-icon">🟡</span>
+                                    <span class="sens-name">High Sensitivity</span>
+                                    <span class="sens-sub">25% Conf | 2.5s Cooldown</span>
+                                </button>
+                                <button type="button" class="btn-sens-preset active" data-sens="ultra">
+                                    <span class="sens-icon">🔴</span>
+                                    <span class="sens-name">Ultra Strict</span>
+                                    <span class="sens-sub">15% Conf | 1.5s (Instant)</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="sensitivity-sliders-wrapper">
+                            <div class="sens-slider-card">
+                                <div class="slider-header-flex">
+                                    <span class="slider-title">🎯 Neural Confidence Threshold:</span>
+                                    <span class="slider-val" id="lblConfidenceVal">15% (0.15)</span>
+                                </div>
+                                <input type="range" id="sliderConfidence" min="0.10" max="0.65" step="0.05" value="0.15" class="custom-range-slider">
+                                <div class="slider-scale">
+                                    <span>Ultra Strict (10%)</span>
+                                    <span>Balanced (35%)</span>
+                                    <span>Conservative (65%)</span>
+                                </div>
+                            </div>
+
+                            <div class="sens-slider-card">
+                                <div class="slider-header-flex">
+                                    <span class="slider-title">⏱️ Violation Alert Cooldown:</span>
+                                    <span class="slider-val" id="lblCooldownVal">1.5s (Instant)</span>
+                                </div>
+                                <input type="range" id="sliderCooldown" min="0.5" max="8.0" step="0.5" value="1.5" class="custom-range-slider">
+                                <div class="slider-scale">
+                                    <span>Instant (0.5s)</span>
+                                    <span>Moderate (3.0s)</span>
+                                    <span>Spaced (8.0s)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Granular Subsystems Matrix -->
+                <div class="switchboard-columns-grid">
+                    
+                    <!-- Column 1: Worker PPE & Behavior -->
+                    <div class="switchboard-group-card">
+                        <div class="group-card-header">
+                            <span class="group-icon">👷</span>
+                            <h4>Worker PPE & Behavior</h4>
+                        </div>
+                        
+                        <div class="switch-row" data-toggle="helmet_check">
+                            <div class="switch-label-group">
+                                <strong>Hardhat / Helmet Inspection</strong>
+                                <small>Detects missing industrial helmets</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterHelmet" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="vest_check">
+                            <div class="switch-label-group">
+                                <strong>High-Vis Safety Vest</strong>
+                                <small>Fluorescent neon vest compliance</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterVest" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="height_safety">
+                            <div class="switch-label-group">
+                                <strong>Height Safety Harness</strong>
+                                <small>Full-body harness at height (>2m)</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterHarness">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="fall_detection">
+                            <div class="switch-label-group">
+                                <strong>Worker Fall & Man-Down</strong>
+                                <small>Horizontal posture collapse detection</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterFall" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="phone_detection">
+                            <div class="switch-label-group">
+                                <strong>Cellphone Distraction</strong>
+                                <small>Flags phone use in danger zones</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterPhone" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Heavy Machinery & Geofencing -->
+                    <div class="switchboard-group-card">
+                        <div class="group-card-header">
+                            <span class="group-icon">🚜</span>
+                            <h4>Plant & Geofencing</h4>
+                        </div>
+
+                        <div class="switch-row" data-toggle="proximity_detection">
+                            <div class="switch-label-group">
+                                <strong>Machinery Collision Proximity</strong>
+                                <small>Pedestrian & vehicle collision buffer</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterProximity" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="danger_zone">
+                            <div class="switch-label-group">
+                                <strong>Virtual Danger Zone Geofence</strong>
+                                <small>Restricted machine perimeter breach</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterGeofence">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="suspended_load">
+                            <div class="switch-label-group">
+                                <strong>Crane Suspended Load Drop Zone</strong>
+                                <small>Floor drop shadow radar envelope</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterDropZone">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="trench_safety">
+                            <div class="switch-label-group">
+                                <strong>Trench Excavation Setback</strong>
+                                <small>Cave-in margin safe buffer</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterTrench">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="gate_mode">
+                            <div class="switch-label-group">
+                                <strong>Smart Turnstile Gate HUD</strong>
+                                <small>Access Granted/Denied badge mode</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterGate">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Column 3: Hazards, Process & Dispatch Channels -->
+                    <div class="switchboard-group-card">
+                        <div class="group-card-header">
+                            <span class="group-icon">🔥</span>
+                            <h4>Hazards & Dispatch</h4>
+                        </div>
+
+                        <div class="switch-row" data-toggle="fire_detection">
+                            <div class="switch-label-group">
+                                <strong>Fire & Smoke Detection</strong>
+                                <small>Dynamic optical flame & smoke spectrum</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterFire" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="hot_work">
+                            <div class="switch-label-group">
+                                <strong>Hot Work Sparks & Extinguisher</strong>
+                                <small>Verifies extinguisher within 5m</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterHotWork">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="confined_space">
+                            <div class="switch-label-group">
+                                <strong>Confined Space Stay Watchdog</strong>
+                                <small>Headcount and stay-timer limits</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterConfined">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="siren_audio">
+                            <div class="switch-label-group">
+                                <strong>Speaker Siren & TTS Voice</strong>
+                                <small>Audible factory floor voice warnings</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterSiren" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="telegram_alert">
+                            <div class="switch-label-group">
+                                <strong>Mobile Telegram Dispatch</strong>
+                                <small>Sends violation photos to your phone</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterTelegram">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="switch-row" data-toggle="night_mode">
+                            <div class="switch-label-group">
+                                <strong>Night Shift Perimeter Guard</strong>
+                                <small>Tactical after-hours intrusion alert</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkMasterNight">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btnCancelMasterControl">Close Switchboard</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. Construction & Industrial AI Safety Modules Modal -->
+    <div class="modal-backdrop" id="industrialModulesModal" style="display: none;">
+        <div class="modal-box modal-lg industrial-modules-box">
+            <div class="modal-header">
+                <div class="modal-title-with-badge">
+                    <h2>🏗️ Construction & Industrial AI Safety Modules</h2>
+                    <span class="badge-edition">ADVANCED SAFETY MODES</span>
+                </div>
+                <button class="modal-close" id="btnCloseIndustrialModules">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">Enable or customize real-time high-risk detection modules for construction sites, heavy industry, and rigging operations.</p>
+                
+                <div class="module-cards-grid">
+                    
+                    <!-- Module 1: Height Safety -->
+                    <div class="module-card">
+                        <div class="module-card-img-wrap">
+                            <img src="/static/images/features/height_safety_harness.jpg" alt="Height Safety" class="module-card-img" loading="lazy">
+                            <span class="module-img-badge">OSHA 1926 M</span>
+                        </div>
+                        <div class="module-card-header">
+                            <span class="module-icon">🏗️</span>
+                            <div class="module-info">
+                                <h4>Height Safety & Harness Compliance</h4>
+                                <span class="module-sub">OSHA 1926 Subpart M (Elevated Decks & Ladders)</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkHeightSafety">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <p class="module-desc-text">Detects workers in elevated zones and verifies full-body safety harness straps and lanyard anchoring.</p>
+                        <div class="module-card-footer">
+                            <span class="module-siren-label">📢 Siren: Rapid 1350Hz Alert + Voice</span>
+                            <button type="button" class="btn btn-xs btn-siren-test" data-test-siren="harness">🔊 Test Siren</button>
+                        </div>
+                    </div>
+
+                    <!-- Module 2: Crane Suspended Load Drop Zone -->
+                    <div class="module-card">
+                        <div class="module-card-img-wrap">
+                            <img src="/static/images/features/crane_suspended_load.jpg" alt="Crane Suspended Load" class="module-card-img" loading="lazy">
+                            <span class="module-img-badge">OSHA 1926.1400</span>
+                        </div>
+                        <div class="module-card-header">
+                            <span class="module-icon">📦</span>
+                            <div class="module-info">
+                                <h4>Crane Suspended Load "Drop Zone"</h4>
+                                <span class="module-sub">OSHA 1926.1400 (Line-of-Fire Protection)</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkSuspendedLoad">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <p class="module-desc-text">Projects dynamic circular drop shadows beneath hoisted loads and triggers sirens if workers cross into the crush radius.</p>
+                        <div class="module-card-footer">
+                            <span class="module-siren-label">📢 Siren: 580Hz Pulsed Horn + Voice</span>
+                            <button type="button" class="btn btn-xs btn-siren-test" data-test-siren="crane">🔊 Test Siren</button>
+                        </div>
+                    </div>
+
+                    <!-- Module 3: Confined Space Watchdog -->
+                    <div class="module-card">
+                        <div class="module-card-img-wrap">
+                            <img src="/static/images/features/confined_space.jpg" alt="Confined Space" class="module-card-img" loading="lazy">
+                            <span class="module-img-badge">OSHA 1910.146</span>
+                        </div>
+                        <div class="module-card-header">
+                            <span class="module-icon">🚪</span>
+                            <div class="module-info">
+                                <h4>Confined Space Headcount & Stay-Timer</h4>
+                                <span class="module-sub">OSHA 1910.146 (Tanks, Manholes & Silos)</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkConfinedSpace">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="confined-inline-controls">
+                            <div class="form-group mb-0">
+                                <label>Confined Zone Name:</label>
+                                <input type="text" id="inputConfinedName" class="form-control form-control-sm" value="Underground Silo / Manhole #4">
+                            </div>
+                            <div class="form-group mb-0">
+                                <label>Max Safe Stay (Mins):</label>
+                                <input type="number" id="inputConfinedMinutes" class="form-control form-control-sm" value="45" min="1" max="180">
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline" id="btnResetConfinedHeadcount">🔄 Reset Headcount (0)</button>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-siren-label">📢 Siren: Industrial Timeout Chime</span>
+                            <button type="button" class="btn btn-xs btn-siren-test" data-test-siren="confined">🔊 Test Siren</button>
+                        </div>
+                    </div>
+
+                    <!-- Module 4: Hot Work & Extinguisher -->
+                    <div class="module-card">
+                        <div class="module-card-img-wrap">
+                            <img src="/static/images/features/hot_work_welding.jpg" alt="Hot Work Welding" class="module-card-img" loading="lazy">
+                            <span class="module-img-badge">OSHA 1910.252</span>
+                        </div>
+                        <div class="module-card-header">
+                            <span class="module-icon">⚡</span>
+                            <div class="module-info">
+                                <h4>Hot Work & Fire Extinguisher Proximity</h4>
+                                <span class="module-sub">OSHA 1910.252 (Welding & Cutting Fire Watch)</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkHotWork">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <p class="module-desc-text">Detects welding arcs/sparks and checks if an operable fire extinguisher is within 5 meters.</p>
+                        <div class="module-card-footer">
+                            <span class="module-siren-label">📢 Siren: Dual Spark Chirp + Voice</span>
+                            <button type="button" class="btn btn-xs btn-siren-test" data-test-siren="welding">🔊 Test Siren</button>
+                        </div>
+                    </div>
+
+                    <!-- Module 5: Trench Margin & Excavation Cave-in Warning -->
+                    <div class="module-card">
+                        <div class="module-card-img-wrap">
+                            <img src="/static/images/features/trench_excavation.jpg" alt="Trench Excavation" class="module-card-img" loading="lazy">
+                            <span class="module-img-badge">OSHA 1926 P</span>
+                        </div>
+                        <div class="module-card-header">
+                            <span class="module-icon">⚠️</span>
+                            <div class="module-info">
+                                <h4>Trench Margin & Excavation Cave-in Warning</h4>
+                                <span class="module-sub">OSHA 1926 Subpart P (Excavation Setback)</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkTrenchSafety">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <p class="module-desc-text">Warns workers and heavy vehicles violating the safe setback margin along excavation trench lips.</p>
+                        <div class="module-card-footer">
+                            <span class="module-siren-label">📢 Siren: 480Hz Cave-in Warning Buzz</span>
+                            <button type="button" class="btn btn-xs btn-siren-test" data-test-siren="trench">🔊 Test Siren</button>
+                        </div>
+                    </div>
+
+                    <!-- Module 6: Night Guard Mode -->
+                    <div class="module-card">
+                        <div class="module-card-img-wrap">
+                            <img src="/static/images/features/night_perimeter_guard.jpg" alt="Night Perimeter Guard" class="module-card-img" loading="lazy">
+                            <span class="module-img-badge">LOCKDOWN</span>
+                        </div>
+                        <div class="module-card-header">
+                            <span class="module-icon">🌙</span>
+                            <div class="module-info">
+                                <h4>Night Shift Perimeter Security Guard</h4>
+                                <span class="module-sub">After-Hours Intrusion & Theft Protection</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chkNightMode">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <p class="module-desc-text">Engages tactical night perimeter surveillance with instant alarms on any movement/trespasser.</p>
+                        <div class="module-card-footer">
+                            <span class="module-siren-label">📢 Siren: Alternating Security Strobe Alarm</span>
+                            <button type="button" class="btn btn-xs btn-siren-test" data-test-siren="night">🔊 Test Siren</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btnCancelIndustrialModules">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Complete Safety Features Visual Showcase & Interactive Siren Gallery Modal -->
+    <div class="modal-backdrop" id="featureGalleryModal" style="display: none;">
+        <div class="modal-box modal-xl feature-gallery-box">
+            <div class="modal-header">
+                <div class="modal-title-with-badge">
+                    <h2>📸 SafeVision AI: Complete Safety Features & Siren Audio Showcase</h2>
+                    <span class="badge-edition">18 INDUSTRIAL PROTOCOLS & ACOUSTIC SIRENS</span>
+                </div>
+                <div class="modal-header-actions">
+                    <button class="modal-close" id="btnCloseFeatureGallery" title="Close Gallery">✕</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">Explore all active computer vision detection modules, safety gear compliance standards, and test their dedicated physical siren acoustic tones and voice announcements in real-time.</p>
+
+                <!-- Filter Category Tabs -->
+                <div class="gallery-filter-bar">
+                    <button type="button" class="gallery-filter-pill active" data-filter="all">🌟 All Features (18)</button>
+                    <button type="button" class="gallery-filter-pill" data-filter="ppe">👷 Worker PPE & Behavior</button>
+                    <button type="button" class="gallery-filter-pill" data-filter="rigging">🏗️ Heavy Rigging & Plant</button>
+                    <button type="button" class="gallery-filter-pill" data-filter="hazards">🔥 High Hazards & Perimeter</button>
+                    <button type="button" class="gallery-filter-pill" data-filter="enterprise">📊 Analytics & Dispatch</button>
+                </div>
+
+                <!-- 18 Features Visual Cards Grid -->
+                <div class="feature-gallery-grid" id="featureGalleryGrid">
+
+                    <!-- 1. Hardhat / Helmet Inspection -->
+                    <div class="gallery-card" data-category="ppe">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/helmet_inspection.jpg" alt="Hardhat Inspection" loading="lazy">
+                            <span class="gallery-badge badge-osha">OSHA 1926.100</span>
+                            <span class="gallery-severity-tag tag-high">HIGH</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>👷 Hardhat / Safety Helmet Inspection</h3>
+                            </div>
+                            <p class="gallery-card-desc">Continuous real-time optical inspection of industrial protective hardhats with chin-strap and multi-color shell verification.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📢</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 780Hz → 980Hz Rising Safety Chirp
+                                    <div class="tts-quote">"Safety Alert: Hardhat helmet required in work zone!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="helmet">🔊 Test Helmet Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. High-Visibility Safety Vest -->
+                    <div class="gallery-card" data-category="ppe">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/high_vis_vest.jpg" alt="High-Vis Safety Vest" loading="lazy">
+                            <span class="gallery-badge badge-osha">ANSI / ISEA 107</span>
+                            <span class="gallery-severity-tag tag-high">HIGH</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🦺 High-Visibility Safety Vest</h3>
+                            </div>
+                            <p class="gallery-card-desc">Fluorescent neon green and orange reflective vest inspection verifying Class 2/3 daytime and nighttime visibility standards.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📢</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 850Hz Dual Warning Beep
+                                    <div class="tts-quote">"Safety Notice: High-visibility vest required in work zone!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="vest">🔊 Test Vest Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Height Safety & Harness -->
+                    <div class="gallery-card" data-category="rigging">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/height_safety_harness.jpg" alt="Height Safety Harness" loading="lazy">
+                            <span class="gallery-badge badge-osha">OSHA 1926 Subpart M</span>
+                            <span class="gallery-severity-tag tag-critical">CRITICAL</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🏗️ Height Safety & Full-Body Harness</h3>
+                            </div>
+                            <p class="gallery-card-desc">Detects workers on elevated scaffolding, ladders, or steel girders (>2m) and verifies harness straps and anchored safety lanyards.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">🚨</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> Rapid 1350Hz Emergency High-Pitch Chirp
+                                    <div class="tts-quote">"Critical Warning: Fall arrest safety harness mandatory at height!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="harness">🔊 Test Harness Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. Crane Suspended Load Drop Zone -->
+                    <div class="gallery-card" data-category="rigging">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/crane_suspended_load.jpg" alt="Crane Suspended Load" loading="lazy">
+                            <span class="gallery-badge badge-osha">OSHA 1926.1400</span>
+                            <span class="gallery-severity-tag tag-critical">CRITICAL</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>📦 Crane Suspended Load "Drop Zone"</h3>
+                            </div>
+                            <p class="gallery-card-desc">Projects dynamic circular radar drop shadows beneath hoisted loads; triggers sirens when workers step into the crush line-of-fire.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">🚨</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 580Hz Heavy Pulsed Radar Horn
+                                    <div class="tts-quote">"Danger! Stand clear of crane suspended load drop zone!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="crane">🔊 Test Drop Zone Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. Worker Fall & Man-Down Emergency -->
+                    <div class="gallery-card" data-category="ppe">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/worker_fall_mandown.jpg" alt="Worker Fall Detection" loading="lazy">
+                            <span class="gallery-badge badge-osha">FIRST RESPONSE</span>
+                            <span class="gallery-severity-tag tag-critical">CRITICAL</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🚨 Worker Fall & Man-Down Emergency</h3>
+                            </div>
+                            <p class="gallery-card-desc">Rapid detection of horizontal collapse or unconscious postures with multi-frame persistence to eliminate false alarms from bending down.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">🚨</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 1100Hz → 650Hz Descending Distress Alarm
+                                    <div class="tts-quote">"Emergency! Worker fallen or collapsed in Zone 1!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="fall">🔊 Test Fall Alarm</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 6. Virtual Danger Zone Geofence -->
+                    <div class="gallery-card" data-category="hazards">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/danger_geofence.jpg" alt="Danger Zone Geofencing" loading="lazy">
+                            <span class="gallery-badge badge-osha">ISO 13849-1</span>
+                            <span class="gallery-severity-tag tag-critical">CRITICAL</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🛑 Virtual Danger Zone Geofencing</h3>
+                            </div>
+                            <p class="gallery-card-desc">Configurable polygonal exclusion perimeters around robotic welding cells, high-speed conveyors, and heavy industrial machinery.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📢</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 980Hz / 1180Hz Alternating Security Strobe
+                                    <div class="tts-quote">"Warning! Unauthorized worker in restricted machinery perimeter!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="geofence">🔊 Test Geofence Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 7. Confined Space Headcount & Stay-Timer -->
+                    <div class="gallery-card" data-category="hazards">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/confined_space.jpg" alt="Confined Space Watchdog" loading="lazy">
+                            <span class="gallery-badge badge-osha">OSHA 1910.146</span>
+                            <span class="gallery-severity-tag tag-high">HIGH</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🚪 Confined Space Headcount & Stay-Timer</h3>
+                            </div>
+                            <p class="gallery-card-desc">Automated entry/exit headcount logging and strict stay-duration watchdog for tanks, silos, and manholes to prevent toxic gas asphyxiation.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📢</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 620Hz / 740Hz Triple Timeout Buzzer
+                                    <div class="tts-quote">"Alert: Confined space safe stay time limit exceeded!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="confined">🔊 Test Confined Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 8. Hot Work & Fire Extinguisher Proximity -->
+                    <div class="gallery-card" data-category="hazards">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/hot_work_welding.jpg" alt="Hot Work & Extinguisher" loading="lazy">
+                            <span class="gallery-badge badge-osha">OSHA 1910.252</span>
+                            <span class="gallery-severity-tag tag-high">HIGH</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>⚡ Hot Work & Fire Extinguisher Watch</h3>
+                            </div>
+                            <p class="gallery-card-desc">Detects welding arcs and thermal spark emissions and verifies that an operable, certified fire extinguisher is present within 5 meters.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📢</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 880Hz / 720Hz Dual Spark Warning
+                                    <div class="tts-quote">"Caution: Hot work active without fire extinguisher in proximity!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="welding">🔊 Test Welding Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 9. Trench Excavation Margin -->
+                    <div class="gallery-card" data-category="rigging">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/trench_excavation.jpg" alt="Trench Excavation Safety" loading="lazy">
+                            <span class="gallery-badge badge-osha">OSHA 1926 Subpart P</span>
+                            <span class="gallery-severity-tag tag-high">HIGH</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>⚠️ Trench Margin & Cave-in Safe Setback</h3>
+                            </div>
+                            <p class="gallery-card-desc">Monitors excavation lip boundaries and warns personnel and heavy vehicles violating safe setback margins along trench edges.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📢</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 480Hz Deep Caution Buzz
+                                    <div class="tts-quote">"Warning: Stand back from excavation trench collapse edge!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="trench">🔊 Test Trench Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 10. Fire & Smoke Optical Spectrum -->
+                    <div class="gallery-card" data-category="hazards">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/fire_smoke_detection.jpg" alt="Fire & Smoke Detection" loading="lazy">
+                            <span class="gallery-badge badge-osha">NFPA 72</span>
+                            <span class="gallery-severity-tag tag-critical">CRITICAL</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🔥 Fire & Smoke Optical Hazard Detection</h3>
+                            </div>
+                            <p class="gallery-card-desc">High-energy chromatic flame spectrum analysis with multi-frame confirmation to eliminate false fire alarms from red clothing.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">🚨</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 1300Hz ↔ 800Hz European Emergency Evacuation Warble
+                                    <div class="tts-quote">"Emergency! Fire hazard detected in Zone 1! Evacuate immediately!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="fire">🔊 Test Fire Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 11. Machinery & Forklift Proximity -->
+                    <div class="gallery-card" data-category="rigging">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/machinery_proximity.jpg" alt="Forklift Proximity" loading="lazy">
+                            <span class="gallery-badge badge-osha">ISO 3691</span>
+                            <span class="gallery-severity-tag tag-high">HIGH</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🚜 Machinery & Forklift Collision Buffer</h3>
+                            </div>
+                            <p class="gallery-card-desc">Real-time pedestrian-to-machinery distance buffer calculation to prevent blind-spot collisions between moving forklifts and walking personnel.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📢</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 1000Hz Proximity Distance Double-Beep
+                                    <div class="tts-quote">"Caution: Machinery collision proximity hazard!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="proximity">🔊 Test Proximity Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 12. Cellphone Distraction in Active Zones -->
+                    <div class="gallery-card" data-category="ppe">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/phone_distraction.jpg" alt="Phone Distraction" loading="lazy">
+                            <span class="gallery-badge badge-osha">ZERO DISTRACTION</span>
+                            <span class="gallery-severity-tag tag-high">HIGH</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>📱 Cellphone Distraction in Active Zones</h3>
+                            </div>
+                            <p class="gallery-card-desc">Neural detection of handheld mobile devices in active operating machinery zones to eliminate dangerous worker distraction.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📢</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 820Hz Single Notification Ping
+                                    <div class="tts-quote">"Notice: Mobile phone use prohibited in active machinery zone!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="phone">🔊 Test Distraction Ping</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 13. Tactical Night Security Guard -->
+                    <div class="gallery-card" data-category="hazards">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/night_perimeter_guard.jpg" alt="Night Perimeter Guard" loading="lazy">
+                            <span class="gallery-badge badge-osha">LOCKDOWN</span>
+                            <span class="gallery-severity-tag tag-critical">CRITICAL</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🌙 Tactical Night Shift Perimeter Guard</h3>
+                            </div>
+                            <p class="gallery-card-desc">High-contrast tactical surveillance with night HUD filter and instant critical alarms on any after-hours perimeter trespasser movement.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">🚨</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 980Hz / 1180Hz Alternating Security Strobe
+                                    <div class="tts-quote">"Security Alert: Unauthorized intrusion detected in lockdown zone!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="night">🔊 Test Intruder Siren</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 14. Smart Turnstile Gate HUD -->
+                    <div class="gallery-card" data-category="ppe">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/smart_turnstile_gate.jpg" alt="Smart Turnstile Gate" loading="lazy">
+                            <span class="gallery-badge badge-osha">ACCESS CONTROL</span>
+                            <span class="gallery-severity-tag tag-low">REAL-TIME HUD</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🚪 Smart Turnstile Gate & Pre-Entry HUD</h3>
+                            </div>
+                            <p class="gallery-card-desc">Automated factory entrance gate inspection granting or denying turnstile passage based on 100% verified PPE compliance.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">🔔</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> Harmonious Ascending Chime (Pass) / Double Buzz (Denied)
+                                    <div class="tts-quote">"Access Granted" / "Access Denied: Safety gear required."</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="gate_pass">🔊 Test Pass Chime</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger btn-siren-play" data-siren-key="gate_fail">🔊 Test Denied Buzz</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 15. Real-Time Heat Stress & NOAA Thermal Hazard -->
+                    <div class="gallery-card" data-category="enterprise">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/heat_stress_weather.jpg" alt="Heat Stress Weather" loading="lazy">
+                            <span class="gallery-badge badge-osha">NOAA / OSHA</span>
+                            <span class="gallery-severity-tag tag-high">ENVIRONMENTAL</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🌤️ Heat Stress & NOAA Thermal Monitoring</h3>
+                            </div>
+                            <p class="gallery-card-desc">Live meteorological API telemetry with NOAA Rothfusz Heat Index calculation, automated hydration warnings, and heat stroke prevention.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📢</div>
+                                <div class="siren-info">
+                                    <strong>Siren:</strong> 700Hz Staccato Caution Tone
+                                    <div class="tts-quote">"Caution: High heat index thermal warning in factory area!"</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="heat">🔊 Test Heat Warning</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 16. Instant Mobile Telegram Photo Dispatcher -->
+                    <div class="gallery-card" data-category="enterprise">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/telegram_alerts.jpg" alt="Telegram Mobile Alerts" loading="lazy">
+                            <span class="gallery-badge badge-osha">MOBILE DISPATCH</span>
+                            <span class="gallery-severity-tag tag-low">AUTOMATION</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>📱 Instant Mobile Telegram Dispatcher</h3>
+                            </div>
+                            <p class="gallery-card-desc">Immediate push dispatch of high-resolution evidence snapshots with timestamps, violation coordinates, and zone metadata directly to managers' phones.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📲</div>
+                                <div class="siren-info">
+                                    <strong>Dispatch:</strong> Real-time Telegram Bot API dispatch
+                                    <div class="tts-quote">Instant photo evidence with GPS / Zone telemetry</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-outline" id="btnGalleryOpenTelegram">📱 Open Telegram Config</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 17. Industrial Speaker Siren & Multi-Channel Voice -->
+                    <div class="gallery-card" data-category="enterprise">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/siren_speaker.jpg" alt="Industrial Siren Speaker" loading="lazy">
+                            <span class="gallery-badge badge-osha">ACOUSTIC DRIVER</span>
+                            <span class="gallery-severity-tag tag-critical">MULTI-TONE</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🔊 Smart Industrial Siren & Vocal TTS</h3>
+                            </div>
+                            <p class="gallery-card-desc">Dual acoustic engine driving external factory floor loudspeakers via Laptop 1 hardware and browser Web Audio API on Laptop 2 Control Room.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">🔊</div>
+                                <div class="siren-info">
+                                    <strong>Acoustics:</strong> 15 distinct hardware acoustic frequencies + multi-lingual TTS voice
+                                    <div class="tts-quote">Synchronized edge hardware & web dashboard driver</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-siren-play" data-siren-key="general_test">🔊 Test Master Speaker</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 18. Executive Safety Scorecard & 2D Spatial Heatmap -->
+                    <div class="gallery-card" data-category="enterprise">
+                        <div class="gallery-card-media">
+                            <img src="/static/images/features/safety_scorecard.jpg" alt="Executive Safety Scorecard" loading="lazy">
+                            <span class="gallery-badge badge-osha">ISO 45001</span>
+                            <span class="gallery-severity-tag tag-low">ANALYTICS</span>
+                        </div>
+                        <div class="gallery-card-content">
+                            <div class="gallery-card-title">
+                                <h3>🏆 Executive Safety Scorecard & Heatmap</h3>
+                            </div>
+                            <p class="gallery-card-desc">Plant-wide safety compliance analytics calculating consecutive zero-accident streaks, A+ compliance grades, and 2D spatial violation hotspot coordinates.</p>
+                            <div class="gallery-siren-box">
+                                <div class="siren-icon">📊</div>
+                                <div class="siren-info">
+                                    <strong>Analytics:</strong> Real-time Canvas 2D spatial incident mapping
+                                    <div class="tts-quote">Executive audit reporting & PDF compliance export</div>
+                                </div>
+                            </div>
+                            <div class="gallery-card-actions">
+                                <button type="button" class="btn btn-sm btn-primary" id="btnGalleryOpenScorecard">🏆 View Scorecard</button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btnCancelFeatureGallery">Close Gallery</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 8. Snapshot Zoom Modal -->
     <div class="modal-backdrop" id="snapshotModal" style="display: none;">
         <div class="modal-box modal-lg">
             <div class="modal-header">
@@ -384,7 +1623,7 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=3.1"></script>
 </body>
 </html>
 

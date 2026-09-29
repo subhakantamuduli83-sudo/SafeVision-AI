@@ -2,17 +2,23 @@ import cv2
 import threading
 import time
 import os
-from fastapi import FastAPI, Request, Response, BackgroundTasks, Form
+import json
+from fastapi import FastAPI, Request, Response, BackgroundTasks, Form, Body, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import uvicorn
 
-from core.database import init_db, get_recent_incidents, acknowledge_incident, get_incident_summary
+from core.database import (
+    init_db, get_recent_incidents, acknowledge_incident, get_incident_summary,
+    get_heatmap_data, get_safety_scorecard
+)
 from core.alarm import alarm_manager
 from core.detector import SafetyDetector
 from core.report_generator import generate_pdf_report, generate_csv_report
 from core.weather import weather_manager
+from core.notifier import notifier
+from core.copilot import copilot
 
 # Initialize database
 init_db()
@@ -111,6 +117,23 @@ class VideoStreamManager:
     def _capture_loop(self):
         import numpy as np
         while self.is_running:
+            # 1. Seamless Static Image Inspection Support (fire pictures, worker photos, test uploads)
+            src_str = str(self.camera_source).strip()
+            is_image = isinstance(self.camera_source, str) and (
+                src_str.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp')) or
+                (os.path.isfile(src_str) and not src_str.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')))
+            )
+            if is_image and os.path.exists(src_str):
+                raw_frame = cv2.imread(src_str)
+                if raw_frame is not None:
+                    processed_frame, stats = self.detector.process_frame(raw_frame, zone_id=self.zone_name)
+                    with self.lock:
+                        self.current_frame = processed_frame
+                        self.current_stats = stats
+                    time.sleep(0.04) # Smooth 25 FPS stream for static image inspection
+                    continue
+
+            # 2. Live Video / Camera Stream Capture
             if self.cap is None or not self.cap.isOpened():
                 self.cap = self._open_camera()
                 if self.cap is None or not self.cap.isOpened():
@@ -123,6 +146,12 @@ class VideoStreamManager:
 
             ret, raw_frame = self.cap.read()
             if not ret or raw_frame is None:
+                # If reading from a local video file, loop back to frame 0
+                if isinstance(self.camera_source, str) and os.path.isfile(self.camera_source):
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    time.sleep(0.03)
+                    continue
+
                 print("[Stream Warning] Frame grab failed, retrying...")
                 with self.lock:
                     self.current_frame = self._create_fallback_frame("Reconnecting to stream...")
@@ -185,6 +214,7 @@ async def video_feed():
 async def get_stats():
     summary = get_incident_summary()
     weather_data = weather_manager.last_successful_data or {}
+    det = stream_manager.detector
     return {
         "live": stream_manager.current_stats,
         "summary": summary,
@@ -192,6 +222,26 @@ async def get_stats():
         "is_muted": alarm_manager.is_muted,
         "camera_source": str(stream_manager.camera_source),
         "zone_name": stream_manager.zone_name,
+        "gate_mode": det.gate_mode,
+        "danger_zone": {
+            "enabled": det.danger_zone_enabled,
+            "name": det.danger_zone_name,
+            "poly": det.danger_zone_poly_norm
+        },
+        "modules": {
+            "height_safety": det.height_safety_enabled,
+            "suspended_load": det.suspended_load_enabled,
+            "confined_space": {
+                "enabled": det.confined_space_enabled,
+                "name": det.confined_space_name,
+                "headcount": len(det.confined_workers_active),
+                "safe_minutes": int(det.confined_max_safe_seconds / 60)
+            },
+            "hot_work": det.hot_work_enabled,
+            "trench_safety": det.trench_safety_enabled,
+            "night_mode": det.night_mode_enabled
+        },
+        "telegram_enabled": notifier.telegram_enabled,
         "weather": {
             "temperature": weather_data.get("temperature"),
             "humidity": weather_data.get("humidity"),
@@ -199,8 +249,232 @@ async def get_stats():
             "risk_level": weather_data.get("risk_level", "LOW"),
             "api_status": weather_manager.last_api_status,
             "is_demo": weather_manager.demo_mode
-        }
+        },
+        "sensitivity": {
+            "level": getattr(det, "sensitivity_level", "ultra"),
+            "conf_thresh": det.conf_thresh,
+            "cooldown": det.snapshot_cooldown,
+            "strictness": getattr(det, "ppe_strictness", "ultra")
+        },
+        "feature_matrix": det.get_feature_matrix()
     }
+
+# ================= AI Detection Sensitivity Endpoints =================
+@app.get("/api/sensitivity")
+async def get_sensitivity():
+    det = stream_manager.detector
+    return {
+        "status": "success",
+        "level": getattr(det, "sensitivity_level", "ultra"),
+        "conf_thresh": det.conf_thresh,
+        "cooldown": det.snapshot_cooldown,
+        "strictness": getattr(det, "ppe_strictness", "ultra")
+    }
+
+@app.post("/api/sensitivity")
+async def update_sensitivity(
+    level: str = Form(None),
+    conf_thresh: float = Form(None),
+    cooldown: float = Form(None)
+):
+    det = stream_manager.detector
+    result = det.set_sensitivity(level=level, conf_thresh=conf_thresh, cooldown=cooldown)
+    return {"status": "success", **result}
+
+# ================= Master Feature Switchboard & Auto-Pilot Endpoints =================
+@app.get("/api/master-control/status")
+async def get_master_control_status():
+    det = stream_manager.detector
+    matrix = det.get_feature_matrix()
+    return {
+        "status": "success",
+        "auto_pilot_mode": det.auto_pilot_mode,
+        "auto_pilot": det.auto_pilot_mode,
+        "matrix": matrix,
+        "features": matrix
+    }
+
+@app.post("/api/master-control/toggle")
+async def toggle_master_feature(feature: str = Form(...), enabled: bool = Form(...)):
+    det = stream_manager.detector
+    det.set_feature_toggle(feature, enabled)
+    matrix = det.get_feature_matrix()
+    return {
+        "status": "success",
+        "feature": feature,
+        "enabled": enabled,
+        "auto_pilot_mode": det.auto_pilot_mode,
+        "matrix": matrix,
+        "features": matrix
+    }
+
+@app.post("/api/master-control/preset")
+async def apply_master_preset(preset_name: str = Form(None), preset: str = Form(None)):
+    target_preset = preset_name or preset or "clean_ppe_only"
+    det = stream_manager.detector
+    matrix = det.apply_preset(target_preset)
+    return {
+        "status": "success",
+        "preset": target_preset,
+        "auto_pilot_mode": det.auto_pilot_mode,
+        "auto_pilot": det.auto_pilot_mode,
+        "matrix": matrix,
+        "features": matrix
+    }
+
+# ================= Advanced Construction & Industrial Modules Endpoints =================
+@app.get("/api/modules/status")
+async def get_modules_status():
+    det = stream_manager.detector
+    return {
+        "height_safety": det.height_safety_enabled,
+        "suspended_load": det.suspended_load_enabled,
+        "confined_space": {
+            "enabled": det.confined_space_enabled,
+            "name": det.confined_space_name,
+            "headcount": len(det.confined_workers_active),
+            "safe_minutes": int(det.confined_max_safe_seconds / 60),
+            "entered": det.confined_total_entered,
+            "exited": det.confined_total_exited
+        },
+        "hot_work": det.hot_work_enabled,
+        "trench_safety": det.trench_safety_enabled,
+        "night_mode": det.night_mode_enabled,
+        "gate_mode": det.gate_mode,
+        "danger_zone": det.danger_zone_enabled
+    }
+
+@app.post("/api/modules/toggle")
+async def toggle_module(
+    module: str = Form(...),
+    enabled: bool = Form(...),
+    param: str = Form(None)
+):
+    """Dynamically enables/disables any of the 5 new industrial safety modules."""
+    det = stream_manager.detector
+    if module == "height_safety":
+        det.set_height_safety(enabled)
+    elif module == "suspended_load":
+        det.set_suspended_load(enabled)
+    elif module == "confined_space":
+        det.set_confined_space(enabled, name=param)
+    elif module == "hot_work":
+        det.set_hot_work(enabled)
+    elif module == "trench_safety":
+        det.set_trench_safety(enabled)
+    elif module == "night_mode":
+        det.set_night_mode(enabled)
+    elif module == "gate_mode":
+        det.set_gate_mode(enabled)
+    
+    return {"status": "success", "module": module, "enabled": enabled}
+
+@app.post("/api/confined-space/reset")
+async def reset_confined_space():
+    stream_manager.detector.reset_confined_space()
+    return {"status": "success", "message": "Confined space headcount reset to 0"}
+
+# ================= AI Safety Copilot Endpoints =================
+@app.post("/api/copilot/chat")
+async def copilot_chat(query: str = Form(...)):
+    """Conversational AI Safety Advisor grounded in real database records & OSHA standards."""
+    weather_data = weather_manager.last_successful_data or {}
+    result = copilot.ask(query, weather_context=weather_data)
+    return result
+
+# ================= Danger Zone Geofencing Endpoints =================
+@app.get("/api/danger-zone")
+async def get_danger_zone():
+    return {
+        "enabled": stream_manager.detector.danger_zone_enabled,
+        "name": stream_manager.detector.danger_zone_name,
+        "polygon": stream_manager.detector.danger_zone_poly_norm
+    }
+
+@app.post("/api/danger-zone")
+async def update_danger_zone(
+    enabled: bool = Form(...),
+    name: str = Form("Heavy Machinery Perimeter"),
+    poly_json: str = Form(None)
+):
+    poly = None
+    if poly_json:
+        try:
+            poly = json.loads(poly_json)
+        except Exception:
+            pass
+    stream_manager.detector.set_danger_zone(enabled, name, poly)
+    return {
+        "status": "success",
+        "enabled": stream_manager.detector.danger_zone_enabled,
+        "name": stream_manager.detector.danger_zone_name
+    }
+
+# ================= Smart Entry Gate Turnstile Mode =================
+@app.post("/api/mode/gate")
+async def toggle_gate_mode(enabled: bool = Form(...)):
+    stream_manager.detector.set_gate_mode(enabled)
+    return {
+        "status": "success",
+        "gate_mode": stream_manager.detector.gate_mode
+    }
+
+# ================= Instant Telegram Alert Endpoints =================
+@app.get("/api/telegram/config")
+async def get_telegram_config():
+    return {
+        "enabled": notifier.telegram_enabled,
+        "has_token": bool(notifier.telegram_token),
+        "token": notifier.telegram_token,
+        "chat_id": notifier.telegram_chat_id
+    }
+
+@app.post("/api/telegram/config")
+async def update_telegram_config(
+    token: str = Form(""),
+    chat_id: str = Form(""),
+    enabled: bool = Form(True)
+):
+    res = notifier.update_config(token, chat_id, enabled)
+    
+    # Persist to .env file
+    env_path = ".env"
+    try:
+        env_lines = []
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                env_lines = f.readlines()
+        
+        # Filter out old telegram keys
+        filtered = [l for l in env_lines if not l.startswith("TELEGRAM_BOT_TOKEN=") and not l.startswith("TELEGRAM_CHAT_ID=") and not l.startswith("TELEGRAM_ENABLED=")]
+        filtered.append(f"TELEGRAM_BOT_TOKEN={token}\n")
+        filtered.append(f"TELEGRAM_CHAT_ID={chat_id}\n")
+        filtered.append(f"TELEGRAM_ENABLED={'true' if enabled else 'false'}\n")
+        
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(filtered)
+    except Exception as e:
+        print(f"[Env Save Error] {e}")
+
+    return {"status": "success", "config": res}
+
+@app.post("/api/telegram/test")
+async def test_telegram_alert(token: str = Form(None), chat_id: str = Form(None), mock: bool = Form(False)):
+    if token and chat_id:
+        notifier.update_config(token, chat_id, True)
+    res = notifier.send_test_alert(force_mock=mock)
+    return res
+
+# ================= Analytics: 2D Spatial Heatmap & Executive Scorecard =================
+@app.get("/api/analytics/heatmap")
+async def get_heatmap():
+    data = get_heatmap_data(limit=150)
+    return {"points": data}
+
+@app.get("/api/analytics/scorecard")
+async def get_scorecard():
+    card = get_safety_scorecard()
+    return card
 
 @app.get("/api/weather/current")
 async def get_current_weather():
@@ -262,13 +536,78 @@ async def update_settings(source: str = Form(...), zone: str = Form("Zone 1 - Fa
     stream_manager.set_source(source.strip(), zone.strip())
     return {"status": "success", "source": source, "zone": zone}
 
+UPLOAD_DIR = os.path.join("static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@app.post("/api/upload-media")
+async def upload_media(file: UploadFile = File(...), zone: str = Form("Inspection Test Zone")):
+    try:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if not ext:
+            ext = ".jpg"
+        save_path = os.path.join(UPLOAD_DIR, f"inspect_feed{ext}")
+        contents = await file.read()
+        with open(save_path, "wb") as f:
+            f.write(contents)
+        
+        # Switch stream manager to this file immediately
+        stream_manager.set_source(save_path, zone_name=zone)
+        
+        # Immediate one-shot detection
+        stats = {}
+        img = cv2.imread(save_path)
+        if img is not None:
+            _, stats = stream_manager.detector.process_frame(img, zone_id=zone)
+            
+        return {
+            "status": "success",
+            "filename": file.filename,
+            "source_path": save_path,
+            "zone": zone,
+            "stats": stats,
+            "fire_detected": stats.get("fire_detected", False),
+            "violations_count": stats.get("violations_count", 0),
+            "active_violations": stats.get("active_violations", [])
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+FEATURE_SIREN_TESTS = {
+    "helmet": ("PPE_HELMET", "Safety Alert: Hardhat helmet required in work zone!", "HIGH"),
+    "vest": ("PPE_VEST", "Safety Notice: High-visibility vest required in work zone!", "HIGH"),
+    "harness": ("HARNESS", "Critical Warning: Fall arrest safety harness mandatory at height!", "CRITICAL"),
+    "fall": ("FALL", "Emergency! Worker fallen or collapsed in Zone 1!", "CRITICAL"),
+    "crane": ("SUSPENDED_LOAD", "Danger! Stand clear of crane suspended load drop zone!", "CRITICAL"),
+    "fire": ("FIRE", "Emergency! Fire hazard detected in Zone 1! Evacuate immediately!", "CRITICAL"),
+    "confined": ("CONFINED_SPACE", "Alert: Confined space safe stay time limit exceeded!", "HIGH"),
+    "welding": ("HOT_WORK", "Caution: Hot work active without fire extinguisher in proximity!", "HIGH"),
+    "trench": ("TRENCH_MARGIN", "Warning: Stand back from excavation trench collapse edge!", "HIGH"),
+    "geofence": ("GEOFENCE", "Warning: Unauthorized worker in restricted machinery perimeter!", "CRITICAL"),
+    "night": ("NIGHT_INTRUSION", "Security Alert: Unauthorized intrusion detected in lockdown zone!", "CRITICAL"),
+    "gate_pass": ("GATE_PASS", "Worker verified: Access Granted", "LOW"),
+    "gate_fail": ("GATE_FAIL", "Access Denied: Please equip mandatory safety gear", "HIGH"),
+    "phone": ("PHONE", "Notice: Mobile phone use prohibited in active machinery zone!", "HIGH"),
+    "proximity": ("PROXIMITY", "Caution: Machinery collision proximity hazard!", "HIGH"),
+    "heat": ("HEAT_HAZARD", "Caution: High heat index thermal warning in factory area!", "HIGH"),
+}
+
 @app.post("/api/alarm/toggle")
 async def toggle_alarm(mute: bool = Form(None), trigger_test: bool = Form(False)):
     if mute is not None:
         alarm_manager.set_muted(mute)
     if trigger_test:
-        alarm_manager.trigger_alert("TEST", "Attention: Safety Siren Audio Test.", severity="HIGH")
+        alarm_manager.trigger_alert("TEST", "Attention: Safety Siren Audio Test.", severity="HIGH", force=True)
     return {"status": "success", "is_muted": alarm_manager.is_muted}
+
+@app.post("/api/alarm/test/{feature_key}")
+async def test_feature_siren(feature_key: str):
+    fkey = feature_key.lower().strip()
+    if fkey in FEATURE_SIREN_TESTS:
+        atype, msg, sev = FEATURE_SIREN_TESTS[fkey]
+        alarm_manager.trigger_alert(atype, msg, severity=sev, force=True)
+        return {"status": "success", "feature": fkey, "alert_type": atype, "message": msg, "severity": sev}
+    alarm_manager.trigger_alert("TEST", "Attention: SafeVision AI Safety Siren Audio Test.", severity="HIGH", force=True)
+    return {"status": "success", "feature": "general_test"}
 
 @app.get("/api/export/pdf")
 async def export_pdf():

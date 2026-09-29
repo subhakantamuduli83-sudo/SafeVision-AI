@@ -8,5 +8,6 @@ best.pt
 *.jpg
 !assets/cover.jpg
 !static/incidents/placeholder.jpg
+!static/images/features/*.jpg
 .vscode/
 .idea/

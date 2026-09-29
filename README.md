@@ -22,7 +22,13 @@ An AI-powered edge-to-cloud industrial safety monitoring system built for the **
    - 💻 **Laptop 1**: AI Edge inference engine & audio alarm driver.
    - 💻 **Laptop 2**: Central Command Center & Safety Officer Dashboard.
    - 🔊 **Speaker**: Physical audible alert unit.
-5. **Automated Audit Reports**: One-click generation of executive **PDF Safety Compliance Reports** and **CSV Incident Logs**.
+5. **Advanced Construction & Industrial AI Modules (NEW)**:
+   - 🏗️ **Height Safety & Harness Compliance**: OSHA 1926 Subpart M harness strap & tether verification at elevated decks.
+   - 📦 **Crane Suspended Load "Drop Zone"**: Projects dynamic circular radar drop shadows beneath hoisted loads and alerts workers in the line of fire.
+   - 🚪 **Confined Space Headcount & Stay-Timer**: Automatic entry/exit counting & max stay duration timers for tanks/manholes.
+   - ⚡ **Hot Work & Fire Extinguisher Watch**: Detects welding sparks and verifies certified extinguisher proximity (< 5m).
+   - ⚠️ **Trench Margin & 🌙 Night Guard**: Alerts cave-in risk near trench lips & enforces tactical after-hours perimeter security.
+6. **Automated Audit Reports**: One-click generation of executive **PDF Safety Compliance Reports** and **CSV Incident Logs**.
 
 ---
 
