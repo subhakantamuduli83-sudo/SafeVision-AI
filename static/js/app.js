@@ -97,7 +97,18 @@ document.addEventListener('DOMContentLoaded', () => {
     updateClock();
 
     // ================= 2. Live Video & Vision Stats =================
+    let isDocumentVisible = true;
+    document.addEventListener('visibilitychange', () => {
+        isDocumentVisible = !document.hidden;
+        if (isDocumentVisible) {
+            fetchStats();
+            fetchIncidents();
+            if (typeof refreshActiveZoneCameras === 'function') refreshActiveZoneCameras();
+        }
+    });
+
     async function fetchStats() {
+        if (!isDocumentVisible) return;
         try {
             const res = await fetch('/api/stats');
             if (!res.ok) return;
@@ -293,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ================= 3. Incident History & Snapshots =================
     async function fetchIncidents() {
+        if (!isDocumentVisible) return;
         try {
             const res = await fetch('/api/incidents');
             if (!res.ok) return;
@@ -1128,15 +1140,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const tgChatIdInput = document.getElementById('tgChatIdInput');
     const btnTestTelegram = document.getElementById('btnTestTelegram');
     const tgTestStatus = document.getElementById('tgTestStatus');
+    const btnToggleTokenVisibility = document.getElementById('btnToggleTokenVisibility');
+
+    if (btnToggleTokenVisibility && tgBotTokenInput) {
+        btnToggleTokenVisibility.addEventListener('click', () => {
+            if (tgBotTokenInput.type === 'password') {
+                tgBotTokenInput.type = 'text';
+                btnToggleTokenVisibility.innerText = '🔒 Hide Token';
+            } else {
+                tgBotTokenInput.type = 'password';
+                btnToggleTokenVisibility.innerText = '👁️ Show Token';
+            }
+        });
+    }
 
     if (btnTelegramModal) {
         btnTelegramModal.addEventListener('click', async () => {
             telegramModal.style.display = 'flex';
+            tgTestStatus.innerText = '';
             try {
                 const res = await fetch('/api/telegram/config');
                 const data = await res.json();
-                if (data.token) tgBotTokenInput.value = data.token;
-                if (data.chat_id) tgChatIdInput.value = data.chat_id;
+                if (data.token && data.token !== 'dummy_token' && !data.token.includes('dummy')) {
+                    tgBotTokenInput.value = data.token;
+                } else if (!tgBotTokenInput.value) {
+                    tgBotTokenInput.value = '';
+                }
+
+                if (data.chat_id && data.chat_id !== '12345' && data.chat_id !== '0') {
+                    tgChatIdInput.value = data.chat_id;
+                } else if (!tgChatIdInput.value) {
+                    tgChatIdInput.value = '';
+                }
+
                 chkTelegramEnable.checked = data.enabled !== false;
             } catch (e) {
                 console.warn('Failed to load telegram config:', e);
@@ -1154,18 +1190,41 @@ document.addEventListener('DOMContentLoaded', () => {
             const chat_id = tgChatIdInput.value.trim();
             const enabled = chkTelegramEnable.checked;
 
+            if (enabled && (!token || !chat_id)) {
+                tgTestStatus.innerText = '⚠️ Please enter both Bot Token and numeric Chat ID to enable alerts!';
+                tgTestStatus.style.color = '#F59E0B';
+                return;
+            }
+
             const formData = new FormData();
             formData.append('token', token);
             formData.append('chat_id', chat_id);
             formData.append('enabled', enabled ? 'true' : 'false');
 
-            await fetch('/api/telegram/config', { method: 'POST', body: formData });
-            tgTestStatus.innerText = '✅ Configuration saved!';
-            tgTestStatus.style.color = '#10B981';
-            setTimeout(() => {
-                telegramModal.style.display = 'none';
-                tgTestStatus.innerText = '';
-            }, 800);
+            try {
+                const res = await fetch('/api/telegram/config', { method: 'POST', body: formData });
+                const data = await res.json();
+                tgTestStatus.innerText = '✅ Telegram configuration saved!';
+                tgTestStatus.style.color = '#10B981';
+
+                // Sync UI controls
+                if (masterCheckboxes.telegram_alert) {
+                    masterCheckboxes.telegram_alert.checked = enabled && !!token && !!chat_id;
+                }
+                if (ribbonChips.telegram_alert) {
+                    if (enabled && !!token && !!chat_id) ribbonChips.telegram_alert.classList.add('active');
+                    else ribbonChips.telegram_alert.classList.remove('active');
+                }
+                loadMasterControlStatus();
+
+                setTimeout(() => {
+                    telegramModal.style.display = 'none';
+                    tgTestStatus.innerText = '';
+                }, 900);
+            } catch (err) {
+                tgTestStatus.innerText = '❌ Failed to save configuration: ' + err;
+                tgTestStatus.style.color = '#EF4444';
+            }
         });
     }
 
@@ -1175,12 +1234,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const chat_id = tgChatIdInput.value.trim();
 
             if (!token || !chat_id) {
-                tgTestStatus.innerText = '⚠️ Please enter both Bot Token and Chat ID above!';
+                tgTestStatus.innerText = '⚠️ Please enter both Bot Token and Chat ID above first!';
                 tgTestStatus.style.color = '#F59E0B';
                 return;
             }
 
-            tgTestStatus.innerText = '⏳ Sending test alert to your Telegram...';
+            tgTestStatus.innerText = '⏳ Connecting to Telegram API & sending live test alert...';
             tgTestStatus.style.color = '#38BDF8';
 
             try {
@@ -1192,14 +1251,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = await fetch('/api/telegram/test', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (data.status === 'success') {
-                    tgTestStatus.innerText = '✅ Test alert delivered to your phone!';
+                    tgTestStatus.innerText = '✅ Test alert delivered to your Telegram app!';
                     tgTestStatus.style.color = '#10B981';
+                } else if (data.status === 'mock') {
+                    tgTestStatus.innerText = `🧪 ${data.message}`;
+                    tgTestStatus.style.color = '#38BDF8';
                 } else {
                     tgTestStatus.innerText = `⚠️ ${data.message || 'Check Token & Chat ID'}`;
                     tgTestStatus.style.color = '#F59E0B';
                 }
             } catch (e) {
-                tgTestStatus.innerText = '❌ Error triggering alert.';
+                tgTestStatus.innerText = '❌ Error triggering alert: ' + e;
                 tgTestStatus.style.color = '#EF4444';
             }
         });
@@ -1425,6 +1487,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function toggleMasterFeature(featureKey, enabled) {
         try {
+            if (featureKey === 'telegram_alert' && enabled) {
+                try {
+                    const cfgRes = await fetch('/api/telegram/config');
+                    const cfg = await cfgRes.json();
+                    if (!cfg.is_configured) {
+                        if (btnTelegramModal) btnTelegramModal.click();
+                        const statusEl = document.getElementById('tgTestStatus');
+                        if (statusEl) {
+                            statusEl.innerText = '👉 Please enter your Bot Token & Chat ID first to arm Telegram alerts!';
+                            statusEl.style.color = '#F59E0B';
+                        }
+                        return;
+                    }
+                } catch (e) {}
+            }
+
             // Optimistically update local UI immediately
             if (masterCheckboxes[featureKey]) {
                 masterCheckboxes[featureKey].checked = enabled;
@@ -2021,6 +2099,519 @@ document.addEventListener('DOMContentLoaded', () => {
             triggerFeatureSiren(sirenKey, btn);
         });
     });
+
+    // ================= 25. Industrial Zone & Multi-Camera CCTV Grid =================
+    const currentZoneBadge = document.getElementById('currentZoneBadge');
+    const navZoneText = document.getElementById('navZoneText');
+    const zoneTabsList = document.getElementById('zoneTabsList');
+    const btnViewGrid = document.getElementById('btnViewGrid');
+    const btnViewFocus = document.getElementById('btnViewFocus');
+    const btnOpenZoneModal = document.getElementById('btnOpenZoneModal');
+    const cctvGridLayout = document.getElementById('cctvGridLayout');
+    const cctvSingleLayout = document.getElementById('cctvSingleLayout');
+    const cctvThumbnailStrip = document.getElementById('cctvThumbnailStrip');
+
+    // Modal elements
+    const zoneCameraModal = document.getElementById('zoneCameraModal');
+    const btnCloseZoneModal = document.getElementById('btnCloseZoneModal');
+    const btnCloseZoneFooter = document.getElementById('btnCloseZoneFooter');
+    const modalZoneSelect = document.getElementById('modalZoneSelect');
+    const btnModalAddZone = document.getElementById('btnModalAddZone');
+    const btnModalDeleteZone = document.getElementById('btnModalDeleteZone');
+    const newZoneFormBox = document.getElementById('newZoneFormBox');
+    const newZoneNameInput = document.getElementById('newZoneNameInput');
+    const newZoneDescInput = document.getElementById('newZoneDescInput');
+    const btnSubmitNewZone = document.getElementById('btnSubmitNewZone');
+    const btnCancelNewZone = document.getElementById('btnCancelNewZone');
+    const lblActiveZoneName = document.getElementById('lblActiveZoneName');
+    const btnModalAddCamera = document.getElementById('btnModalAddCamera');
+    const newCameraFormBox = document.getElementById('newCameraFormBox');
+    const newCamNameInput = document.getElementById('newCamNameInput');
+    const newCamSourceInput = document.getElementById('newCamSourceInput');
+    const newCamFocusInput = document.getElementById('newCamFocusInput');
+    const btnSubmitNewCam = document.getElementById('btnSubmitNewCam');
+    const btnCancelNewCam = document.getElementById('btnCancelNewCam');
+    const modalCameraList = document.getElementById('modalCameraList');
+
+    let isMultiGridMode = true; // Default: Multi-Grid view
+    let activeZoneData = null;
+    let cachedCameras = [];
+
+    async function loadZonesAndCameras() {
+        try {
+            const res = await fetch('/api/zones');
+            if (!res.ok) return;
+            const data = await res.json();
+            const zones = data.zones || [];
+            const activeId = data.active_zone_id || 'zone_1';
+
+            // 1. Update Header text
+            if (navZoneText) {
+                navZoneText.innerText = data.active_zone_name || 'Zone 1 - Main Floor';
+            }
+            if (lblActiveZoneName) {
+                lblActiveZoneName.innerText = data.active_zone_name || 'Zone 1';
+            }
+
+            // 2. Render Zone Tabs Pills
+            if (zoneTabsList) {
+                zoneTabsList.innerHTML = '';
+                zones.forEach(z => {
+                    const pill = document.createElement('button');
+                    pill.type = 'button';
+                    pill.className = `zone-pill ${z.id === activeId ? 'active' : ''}`;
+                    pill.setAttribute('data-zone', z.id);
+                    pill.innerHTML = `
+                        <span class="pill-dot"></span> 📍 ${escapeHtml(z.name)} 
+                        <span class="cam-count-tag">${(z.cameras || []).length} Cams</span>
+                    `;
+                    pill.addEventListener('click', () => switchZone(z.id));
+                    zoneTabsList.appendChild(pill);
+                });
+
+                // Re-add "+ Add Zone" pill
+                const addPill = document.createElement('button');
+                addPill.type = 'button';
+                addPill.className = 'btn-add-zone-pill';
+                addPill.id = 'btnQuickAddZone';
+                addPill.innerHTML = '➕ Add Zone';
+                addPill.addEventListener('click', () => {
+                    openZoneModal();
+                    if (newZoneFormBox) newZoneFormBox.style.display = 'block';
+                });
+                zoneTabsList.appendChild(addPill);
+            }
+
+            // 3. Render Modal Zone Select
+            if (modalZoneSelect) {
+                modalZoneSelect.innerHTML = '';
+                zones.forEach(z => {
+                    const opt = document.createElement('option');
+                    opt.value = z.id;
+                    opt.innerText = z.name;
+                    if (z.id === activeId) opt.selected = true;
+                    modalZoneSelect.appendChild(opt);
+                });
+            }
+
+            // 4. Fetch and render cameras for active zone
+            await refreshActiveZoneCameras();
+
+        } catch (e) {
+            console.warn('[Zone Manager] Error loading zones:', e);
+        }
+    }
+
+    async function refreshActiveZoneCameras() {
+        try {
+            const res = await fetch('/api/zone/cameras');
+            if (!res.ok) return;
+            const data = await res.json();
+            activeZoneData = data.active_zone || {};
+            cachedCameras = data.cameras || [];
+            const focusedId = data.focused_cam_id || (cachedCameras[0] ? cachedCameras[0].id : null);
+
+            renderCCTVGrid(cachedCameras);
+            renderCCTVThumbnails(cachedCameras, focusedId);
+            renderModalCameraList(cachedCameras);
+        } catch (e) {
+            console.warn('[Zone Manager] Error refreshing cameras:', e);
+        }
+    }
+
+    function renderCCTVGrid(cameras) {
+        if (!cctvGridLayout) return;
+
+        if (!cameras || cameras.length === 0) {
+            cctvGridLayout.innerHTML = `
+                <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #94A3B8;">
+                    <p style="font-size: 1.1rem; margin-bottom: 8px;">📷 No cameras configured for this zone yet.</p>
+                    <button class="btn btn-sm btn-accent" id="btnEmptyAddCam">➕ Add Camera Now</button>
+                </div>
+            `;
+            const emptyBtn = document.getElementById('btnEmptyAddCam');
+            if (emptyBtn) emptyBtn.addEventListener('click', () => openZoneModal(true));
+            return;
+        }
+
+        // Optimization: In-place DOM update when camera list structure has not changed
+        const existingCards = Array.from(cctvGridLayout.querySelectorAll('.cctv-card'));
+        const existingIds = existingCards.map(c => c.getAttribute('data-cam-id'));
+        const targetIds = cameras.map(c => c.id);
+        const structureMatches = existingIds.length === targetIds.length && existingIds.every((id, idx) => id === targetIds[idx]);
+
+        if (structureMatches) {
+            cameras.forEach((cam, idx) => {
+                const card = existingCards[idx];
+                const hasHazard = !!(cam.stats && (cam.stats.fire_detected || (cam.stats.active_violations && cam.stats.active_violations.length > 0)));
+                if (hasHazard && !card.classList.contains('has-hazard')) {
+                    card.classList.add('has-hazard');
+                } else if (!hasHazard && card.classList.contains('has-hazard')) {
+                    card.classList.remove('has-hazard');
+                }
+
+                const workersCount = cam.stats ? (cam.stats.total_workers || 0) : 0;
+                const compRate = cam.stats ? (cam.stats.compliance_rate || 100) : 100;
+                const compColor = compRate >= 80 ? '#10B981' : compRate >= 50 ? '#F59E0B' : '#EF4444';
+
+                const statsEl = card.querySelector('.cctv-card-stats');
+                if (statsEl) {
+                    statsEl.style.color = compColor;
+                    statsEl.textContent = `👷 ${workersCount} (${compRate}%)`;
+                }
+            });
+            return;
+        }
+
+        // Structural rebuild only on camera add/delete or zone switch
+        cctvGridLayout.innerHTML = '';
+
+        // Adjust grid template columns based on camera count (e.g. 1, 2, 4, 6)
+        if (cameras.length <= 1) {
+            cctvGridLayout.style.gridTemplateColumns = '1fr';
+            cctvGridLayout.style.gridTemplateRows = '1fr';
+        } else if (cameras.length <= 4) {
+            cctvGridLayout.style.gridTemplateColumns = 'repeat(2, 1fr)';
+            cctvGridLayout.style.gridTemplateRows = 'repeat(2, 1fr)';
+        } else {
+            cctvGridLayout.style.gridTemplateColumns = 'repeat(3, 1fr)';
+            cctvGridLayout.style.gridTemplateRows = 'repeat(2, 1fr)';
+        }
+
+        cameras.forEach(cam => {
+            const card = document.createElement('div');
+            card.className = `cctv-card ${cam.stats && (cam.stats.fire_detected || (cam.stats.active_violations && cam.stats.active_violations.length > 0)) ? 'has-hazard' : ''}`;
+            card.setAttribute('data-cam-id', cam.id);
+            card.title = `Click to zoom into ${cam.name}`;
+
+            const workersCount = cam.stats ? (cam.stats.total_workers || 0) : 0;
+            const compRate = cam.stats ? (cam.stats.compliance_rate || 100) : 100;
+            const compColor = compRate >= 80 ? '#10B981' : compRate >= 50 ? '#F59E0B' : '#EF4444';
+
+            card.innerHTML = `
+                <div class="cctv-card-header">
+                    <span class="cctv-card-title">📹 ${escapeHtml(cam.name)}</span>
+                    <span class="cctv-live-tag">● LIVE</span>
+                </div>
+                <div class="cctv-card-media">
+                    <img src="/api/stream/${encodeURIComponent(cam.id)}" class="cctv-card-img" alt="${escapeHtml(cam.name)}" loading="lazy">
+                </div>
+                <div class="cctv-card-footer">
+                    <span class="cctv-focus-tag">${escapeHtml(cam.focus || 'Safety')}</span>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span class="cctv-card-stats" style="color: ${compColor}; font-weight: 700;">👷 ${workersCount} (${compRate}%)</span>
+                        <span class="cctv-btn-expand">⛶ Focus</span>
+                    </div>
+                </div>
+            `;
+
+            card.addEventListener('click', () => {
+                focusOnCamera(cam.id);
+            });
+
+            cctvGridLayout.appendChild(card);
+        });
+    }
+
+    function renderCCTVThumbnails(cameras, focusedId) {
+        if (!cctvThumbnailStrip) return;
+
+        // Optimization: In-place highlight toggle to avoid recreating thumbnail <img> elements
+        const existingThumbs = Array.from(cctvThumbnailStrip.querySelectorAll('.cctv-thumb-card'));
+        const existingIds = existingThumbs.map(t => t.getAttribute('data-cam-id'));
+        const targetIds = (cameras || []).map(c => c.id);
+        const structureMatches = existingIds.length === targetIds.length && existingIds.every((id, idx) => id === targetIds[idx]);
+
+        if (structureMatches) {
+            existingThumbs.forEach(t => {
+                const cid = t.getAttribute('data-cam-id');
+                if (cid === focusedId) {
+                    t.classList.add('active-thumb');
+                } else {
+                    t.classList.remove('active-thumb');
+                }
+            });
+            return;
+        }
+
+        cctvThumbnailStrip.innerHTML = '';
+
+        cameras.forEach(cam => {
+            const thumb = document.createElement('div');
+            thumb.className = `cctv-thumb-card ${cam.id === focusedId ? 'active-thumb' : ''}`;
+            thumb.setAttribute('data-cam-id', cam.id);
+            thumb.title = `Switch focus to ${cam.name}`;
+            thumb.innerHTML = `
+                <img src="/api/stream/${encodeURIComponent(cam.id)}" alt="${escapeHtml(cam.name)}" loading="lazy">
+                <span class="cctv-thumb-title">${escapeHtml(cam.name)}</span>
+            `;
+            thumb.addEventListener('click', (e) => {
+                e.stopPropagation();
+                focusOnCamera(cam.id);
+            });
+            cctvThumbnailStrip.appendChild(thumb);
+        });
+    }
+
+    function renderModalCameraList(cameras) {
+        if (!modalCameraList) return;
+        modalCameraList.innerHTML = '';
+
+        if (!cameras || cameras.length === 0) {
+            modalCameraList.innerHTML = `<p style="color: #94A3B8; font-size: 0.85rem;">No cameras configured in this zone yet. Click "Add Camera to Zone" above.</p>`;
+            return;
+        }
+
+        cameras.forEach(cam => {
+            const card = document.createElement('div');
+            card.className = 'modal-cam-card';
+            card.innerHTML = `
+                <div class="modal-cam-header">
+                    <span class="modal-cam-name">📹 ${escapeHtml(cam.name)}</span>
+                    <button type="button" class="btn btn-sm btn-outline btn-delete-cam" style="border-color: #EF4444; color: #EF4444; padding: 2px 7px; font-size: 0.7rem;" data-cam-id="${cam.id}" title="Remove Camera">🗑️</button>
+                </div>
+                <div class="modal-cam-source"><b>Source:</b> <code>${escapeHtml(String(cam.source))}</code></div>
+                <div class="modal-cam-focus">🎯 <b>Focus:</b> ${escapeHtml(cam.focus)}</div>
+            `;
+
+            const delBtn = card.querySelector('.btn-delete-cam');
+            if (delBtn) {
+                delBtn.addEventListener('click', async () => {
+                    if (confirm(`Remove camera "${cam.name}" from this zone?`)) {
+                        await deleteCamera(cam.id);
+                    }
+                });
+            }
+
+            modalCameraList.appendChild(card);
+        });
+    }
+
+    async function switchZone(zoneId) {
+        try {
+            const formData = new FormData();
+            formData.append('zone_id', zoneId);
+            const res = await fetch('/api/zones/active', { method: 'POST', body: formData });
+            if (res.ok) {
+                await loadZonesAndCameras();
+            }
+        } catch (e) {
+            console.error('[Zone Switch Error]', e);
+        }
+    }
+
+    async function focusOnCamera(camId) {
+        try {
+            const formData = new FormData();
+            formData.append('cam_id', camId);
+            await fetch('/api/zone/camera/focus', { method: 'POST', body: formData });
+            
+            // Switch to single view
+            setViewMode(false);
+            
+            // Highlight thumbnail
+            document.querySelectorAll('.cctv-thumb-card').forEach(t => {
+                t.classList.remove('active-thumb');
+            });
+            const activeT = document.querySelector(`.cctv-thumb-card img[src*="${camId}"]`);
+            if (activeT && activeT.parentElement) {
+                activeT.parentElement.classList.add('active-thumb');
+            }
+
+            // Update single video feed player
+            const liveVideoFeed = document.getElementById('liveVideoFeed');
+            if (liveVideoFeed) {
+                liveVideoFeed.src = `/api/stream/${encodeURIComponent(camId)}`;
+            }
+        } catch (e) {
+            console.error('[Camera Focus Error]', e);
+        }
+    }
+
+    function setViewMode(gridMode) {
+        isMultiGridMode = gridMode;
+        if (isMultiGridMode) {
+            if (cctvGridLayout) cctvGridLayout.style.display = 'grid';
+            if (cctvSingleLayout) cctvSingleLayout.style.display = 'none';
+            if (btnViewGrid) btnViewGrid.classList.add('active');
+            if (btnViewFocus) btnViewFocus.classList.remove('active');
+        } else {
+            if (cctvGridLayout) cctvGridLayout.style.display = 'none';
+            if (cctvSingleLayout) cctvSingleLayout.style.display = 'flex';
+            if (btnViewGrid) btnViewGrid.classList.remove('active');
+            if (btnViewFocus) btnViewFocus.classList.add('active');
+        }
+    }
+
+    function openZoneModal(openAddCam = false) {
+        if (zoneCameraModal) {
+            zoneCameraModal.style.display = 'flex';
+            if (newZoneFormBox) newZoneFormBox.style.display = 'none';
+            if (newCameraFormBox) newCameraFormBox.style.display = openAddCam ? 'block' : 'none';
+        }
+    }
+
+    function closeZoneModal() {
+        if (zoneCameraModal) {
+            zoneCameraModal.style.display = 'none';
+        }
+    }
+
+    async function deleteCamera(camId) {
+        if (!activeZoneData || !activeZoneData.id) return;
+        try {
+            const formData = new FormData();
+            formData.append('cam_id', camId);
+            const res = await fetch(`/api/zones/${encodeURIComponent(activeZoneData.id)}/cameras/delete`, { method: 'POST', body: formData });
+            if (res.ok) {
+                await refreshActiveZoneCameras();
+            }
+        } catch (e) {
+            console.error('[Delete Camera Error]', e);
+        }
+    }
+
+    // Modal Events Binding
+    if (currentZoneBadge) currentZoneBadge.addEventListener('click', () => openZoneModal());
+    if (btnOpenZoneModal) btnOpenZoneModal.addEventListener('click', () => openZoneModal());
+    if (btnCloseZoneModal) btnCloseZoneModal.addEventListener('click', closeZoneModal);
+    if (btnCloseZoneFooter) btnCloseZoneFooter.addEventListener('click', closeZoneModal);
+
+    if (btnViewGrid) btnViewGrid.addEventListener('click', () => setViewMode(true));
+    if (btnViewFocus) btnViewFocus.addEventListener('click', () => setViewMode(false));
+
+    if (modalZoneSelect) {
+        modalZoneSelect.addEventListener('change', (e) => {
+            switchZone(e.target.value);
+        });
+    }
+
+    if (btnModalAddZone) {
+        btnModalAddZone.addEventListener('click', () => {
+            if (newZoneFormBox) {
+                newZoneFormBox.style.display = newZoneFormBox.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+    }
+
+    if (btnCancelNewZone) {
+        btnCancelNewZone.addEventListener('click', () => {
+            if (newZoneFormBox) newZoneFormBox.style.display = 'none';
+        });
+    }
+
+    if (btnSubmitNewZone) {
+        btnSubmitNewZone.addEventListener('click', async () => {
+            const name = newZoneNameInput.value.trim();
+            const desc = newZoneDescInput.value.trim();
+            if (!name) {
+                alert('Please enter a Zone Name');
+                return;
+            }
+            try {
+                const formData = new FormData();
+                formData.append('name', name);
+                formData.append('description', desc);
+                const res = await fetch('/api/zones/add', { method: 'POST', body: formData });
+                if (res.ok) {
+                    newZoneNameInput.value = '';
+                    newZoneDescInput.value = '';
+                    if (newZoneFormBox) newZoneFormBox.style.display = 'none';
+                    await loadZonesAndCameras();
+                }
+            } catch (e) {
+                console.error('[Add Zone Error]', e);
+            }
+        });
+    }
+
+    if (btnModalDeleteZone) {
+        btnModalDeleteZone.addEventListener('click', async () => {
+            if (!activeZoneData || !activeZoneData.id) return;
+            if (confirm(`Are you sure you want to delete zone "${activeZoneData.name}"?`)) {
+                try {
+                    const formData = new FormData();
+                    formData.append('zone_id', activeZoneData.id);
+                    const res = await fetch('/api/zones/delete', { method: 'POST', body: formData });
+                    if (res.ok) {
+                        await loadZonesAndCameras();
+                    } else {
+                        alert('Cannot delete the only remaining zone.');
+                    }
+                } catch (e) {
+                    console.error('[Delete Zone Error]', e);
+                }
+            }
+        });
+    }
+
+    if (btnModalAddCamera) {
+        btnModalAddCamera.addEventListener('click', () => {
+            if (newCameraFormBox) {
+                newCameraFormBox.style.display = newCameraFormBox.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+    }
+
+    if (btnCancelNewCam) {
+        btnCancelNewCam.addEventListener('click', () => {
+            if (newCameraFormBox) newCameraFormBox.style.display = 'none';
+        });
+    }
+
+    if (btnSubmitNewCam) {
+        btnSubmitNewCam.addEventListener('click', async () => {
+            const name = newCamNameInput.value.trim();
+            const source = newCamSourceInput.value.trim();
+            const focus = newCamFocusInput.value.trim();
+            if (!name || !source) {
+                alert('Please enter both Camera Name and Video Source');
+                return;
+            }
+            if (!activeZoneData || !activeZoneData.id) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('name', name);
+                formData.append('source', source);
+                formData.append('focus', focus || 'General Safety');
+                const isNum = !isNaN(source);
+                formData.append('cam_type', source.startsWith('http') || source.startsWith('rtsp') ? 'rtsp' : isNum ? 'webcam' : 'industrial_feed');
+
+                const res = await fetch(`/api/zones/${encodeURIComponent(activeZoneData.id)}/cameras/add`, { method: 'POST', body: formData });
+                if (res.ok) {
+                    newCamNameInput.value = '';
+                    newCamSourceInput.value = '';
+                    newCamFocusInput.value = '';
+                    if (newCameraFormBox) newCameraFormBox.style.display = 'none';
+                    await refreshActiveZoneCameras();
+                }
+            } catch (e) {
+                console.error('[Add Camera Error]', e);
+            }
+        });
+    }
+
+    // Helper: Escape HTML
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    // Initial load
+    loadZonesAndCameras();
+
+    // Periodic camera stats refresh every 4 seconds to update worker counts & violation tags
+    setInterval(() => {
+        if (isDocumentVisible && isMultiGridMode && cachedCameras.length > 0) {
+            refreshActiveZoneCameras();
+        }
+    }, 4000);
 });
 
 

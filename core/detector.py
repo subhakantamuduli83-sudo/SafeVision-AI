@@ -395,7 +395,14 @@ class SafetyDetector:
         self.night_mode_enabled = enabled
 
     def _load_model(self):
-        """Loads YOLOv8 model."""
+        """Loads YOLOv8 model with optimized CPU threading."""
+        try:
+            import torch
+            # Cap PyTorch intra-op threads to 4 so it runs smoothly without monopolizing laptop CPU cores
+            torch.set_num_threads(min(4, os.cpu_count() or 4))
+        except Exception:
+            pass
+
         try:
             from ultralytics import YOLO
             if os.path.exists("best.pt"):
@@ -416,11 +423,22 @@ class SafetyDetector:
 
     # ================= Vision Algorithms =================
     def _detect_fire_smoke_hsv(self, frame):
-        """Detects fire flames and combustion hazards using multi-spectral YCrCb, RGB differential, and HSV chromatic models."""
-        h, w, _ = frame.shape
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        b, g, r = cv2.split(frame)
-        ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+        """Detects fire flames and combustion hazards using multi-spectral YCrCb, RGB differential, and HSV chromatic models with dynamic downsampling."""
+        orig_h, orig_w, _ = frame.shape
+        # Downscale for ultra-fast color conversions if frame is larger than 480px width
+        if orig_w > 480:
+            scale_x = orig_w / 480.0
+            scale_y = orig_h / float(int(orig_h * (480.0 / orig_w)))
+            proc_frame = cv2.resize(frame, (480, int(orig_h * (480.0 / orig_w))))
+        else:
+            scale_x = 1.0
+            scale_y = 1.0
+            proc_frame = frame
+
+        h, w, _ = proc_frame.shape
+        hsv = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2HSV)
+        b, g, r = cv2.split(proc_frame)
+        ycrcb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2YCrCb)
         y, cr, cb = cv2.split(ycrcb)
         
         # A. Flame Hue & Chroma Spectrum:
@@ -449,11 +467,12 @@ class SafetyDetector:
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         raw_boxes = []
+        min_area = max(50, 350 / (scale_x * scale_y))
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area >= 350:
+            if area >= min_area:
                 x, y_box, box_w, box_h = cv2.boundingRect(cnt)
-                if box_w >= 14 and box_h >= 14:
+                if box_w >= 10 and box_h >= 10:
                     patch_hsv = hsv[y_box:y_box+box_h, x:x+box_w]
                     patch_r = r[y_box:y_box+box_h, x:x+box_w]
                     if patch_hsv.size > 0 and patch_r.size > 0:
@@ -484,17 +503,30 @@ class SafetyDetector:
                 merged.append(b_item)
                 
         max_area = (merged[0][2]-merged[0][0]) * (merged[0][3]-merged[0][1])
-        if max_area > 1200:
+        if max_area > (1200 / (scale_x * scale_y)):
             merged = [b for b in merged if ((b[2]-b[0])*(b[3]-b[1])) >= 0.04 * max_area]
             
+        # Scale back to original frame dimensions
+        if scale_x != 1.0 or scale_y != 1.0:
+            return [(int(b[0]*scale_x), int(b[1]*scale_y), int(b[2]*scale_x), int(b[3]*scale_y), b[4]*scale_x*scale_y, b[5]) for b in merged]
         return merged
 
     def _detect_welding_sparks(self, frame):
-        """Detects hot work / welding sparks & arcs via high luminance and chromatic temperature."""
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        """Detects hot work / welding sparks & arcs via high luminance and chromatic temperature with dynamic downsampling."""
+        orig_h, orig_w, _ = frame.shape
+        if orig_w > 480:
+            scale_x = orig_w / 480.0
+            scale_y = orig_h / float(int(orig_h * (480.0 / orig_w)))
+            proc_frame = cv2.resize(frame, (480, int(orig_h * (480.0 / orig_w))))
+        else:
+            scale_x = 1.0
+            scale_y = 1.0
+            proc_frame = frame
+
+        gray = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2GRAY)
         _, bright_mask = cv2.threshold(gray, 245, 255, cv2.THRESH_BINARY)
         
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        hsv = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2HSV)
         lower_spark = np.array([10, 100, 220], dtype=np.uint8)
         upper_spark = np.array([35, 255, 255], dtype=np.uint8)
         spark_color = cv2.inRange(hsv, lower_spark, upper_spark)
@@ -505,11 +537,16 @@ class SafetyDetector:
         
         contours, _ = cv2.findContours(combined_sparks, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         spark_boxes = []
+        min_area = max(10, 60 / (scale_x * scale_y))
+        max_area = 4000 / (scale_x * scale_y)
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if 60 < area < 4000:
+            if min_area < area < max_area:
                 x, y, w, h = cv2.boundingRect(cnt)
                 spark_boxes.append((x, y, x + w, y + h, area))
+
+        if scale_x != 1.0 or scale_y != 1.0:
+            return [(int(b[0]*scale_x), int(b[1]*scale_y), int(b[2]*scale_x), int(b[3]*scale_y), b[4]*scale_x*scale_y) for b in spark_boxes]
         return spark_boxes
 
     def _detect_extinguisher_near(self, frame, spark_center: Tuple[int, int], radius_px: int = 240) -> Tuple[bool, Tuple[int, int, int, int]]:
@@ -686,6 +723,11 @@ class SafetyDetector:
         if frame is None:
             return None, {}
 
+        orig_h, orig_w, _ = frame.shape
+        if orig_w > 1280:
+            scale = 1280.0 / orig_w
+            frame = cv2.resize(frame, (1280, int(orig_h * scale)))
+
         annotated_frame = frame.copy()
         h, w, _ = frame.shape
         now = time.time()
@@ -850,7 +892,7 @@ class SafetyDetector:
 
         if self.model is not None:
             try:
-                results = self.model(frame, conf=self.conf_thresh, verbose=False)[0]
+                results = self.model(frame, conf=self.conf_thresh, imgsz=640, verbose=False)[0]
 
                 for box in results.boxes:
                     cls_id = int(box.cls[0])

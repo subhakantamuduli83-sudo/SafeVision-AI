@@ -1,0 +1,40 @@
+{
+  "active_zone_id": "zone_1",
+  "zones": [
+    {
+      "id": "zone_1",
+      "name": "Zone 1 - Main Floor",
+      "description": "Main Industrial Assembly Hall & Work Areas",
+      "cameras": [
+        {
+          "id": "cam_01",
+          "name": "CAM 01 - PPE Entry Gate",
+          "source": "0",
+          "type": "webcam",
+          "focus": "Turnstile Helmet & High-Vis Vest Inspection"
+        },
+        {
+          "id": "cam_02",
+          "name": "CAM 02 - Scaffolding Heights",
+          "source": "static/images/features/height_safety_harness.jpg",
+          "type": "industrial_feed",
+          "focus": "Elevated Lifeline & Safety Harness Compliance"
+        },
+        {
+          "id": "cam_03",
+          "name": "CAM 03 - Crane Suspended Load",
+          "source": "static/images/features/crane_suspended_load.jpg",
+          "type": "industrial_feed",
+          "focus": "Drop Zone Perimeter & Line of Fire Clearance"
+        },
+        {
+          "id": "cam_04",
+          "name": "CAM 04 - Hot Work & Welding Bay",
+          "source": "static/images/features/hot_work_welding.jpg",
+          "type": "industrial_feed",
+          "focus": "Welding Flash & Fire Extinguisher Readiness"
+        }
+      ]
+    }
+  ]
+}

@@ -17,8 +17,9 @@ from core.alarm import alarm_manager
 from core.detector import SafetyDetector
 from core.report_generator import generate_pdf_report, generate_csv_report
 from core.weather import weather_manager
-from core.notifier import notifier
+from core.notifier import notifier, save_env_telegram
 from core.copilot import copilot
+from core.camera_manager import camera_manager
 
 # Initialize database
 init_db()
@@ -34,151 +35,62 @@ os.makedirs(os.path.join("static", "incidents"), exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Global Video Streaming & Processing State
+# Global Video Streaming & Processing State (Unified with ZoneCameraManager)
 class VideoStreamManager:
+    """Enterprise Stream Manager: Delegates capture & inference to camera_manager to prevent duplicate device binding and multi-threading overhead."""
     def __init__(self):
-        self.camera_source = 0 # Default: Laptop webcam or change to IP URL
-        self.zone_name = "Zone 1 - Main Floor"
-        self.cap = None
-        self.detector = SafetyDetector()
-        self.current_frame = None
-        self.current_stats = {
-            "total_workers": 0,
-            "compliant_workers": 0,
-            "violations_count": 0,
-            "compliance_rate": 100.0,
-            "fire_detected": False,
-            "active_violations": [],
-            "timestamp": "--:--:--"
-        }
-        self.is_running = True
+        self._zone_name = None
+        self._camera_source = None
         self.lock = threading.Lock()
-        self.thread = threading.Thread(target=self._capture_loop, daemon=True)
-        self.thread.start()
 
-    def _sanitize_source(self, source):
-        if isinstance(source, str):
-            source = source.strip().strip('"').strip("'")
-            if source.isdigit():
-                return int(source)
-            # Auto-prefix http:// if missing on IP inputs
-            if not source.startswith("http://") and not source.startswith("https://") and not source.startswith("rtsp://") and not os.path.exists(source):
-                if any(x in source for x in [":4747", ":8080", ":8000", ":8554", "/video", "/mjpegfeed"]):
-                    source = "http://" + source
+    @property
+    def detector(self):
+        return camera_manager.detector
 
-            # Automatic formatting for DroidCam and IP Webcam URLs
-            if source.startswith("http://") or source.startswith("https://"):
-                # DroidCam (Port 4747)
-                if ":4747" in source and not any(source.endswith(x) for x in ["/video", "/mjpegfeed"]):
-                    source = source.rstrip("/") + "/video"
-                # IP Webcam (Port 8080)
-                elif ":8080" in source and not any(source.endswith(x) for x in ["/video", "/videofeed", "/shot.jpg"]):
-                    source = source.rstrip("/") + "/video"
-        return source
+    @property
+    def zone_name(self):
+        if self._zone_name:
+            return self._zone_name
+        return camera_manager.get_active_zone().get("name", "Zone 1 - Main Floor")
+
+    @zone_name.setter
+    def zone_name(self, val):
+        self._zone_name = val
+
+    @property
+    def camera_source(self):
+        if self._camera_source is not None:
+            return self._camera_source
+        active_zone = camera_manager.get_active_zone()
+        cams = active_zone.get("cameras", [])
+        if cams:
+            for c in cams:
+                if c["id"] == camera_manager.focused_cam_id:
+                    return c.get("source", 0)
+            return cams[0].get("source", 0)
+        return 0
+
+    @camera_source.setter
+    def camera_source(self, val):
+        self._camera_source = val
+
+    @property
+    def current_stats(self):
+        return camera_manager.get_focused_stats()
+
+    @property
+    def current_frame(self):
+        worker = camera_manager.get_focused_worker()
+        return worker.current_frame if worker else None
 
     def set_source(self, source, zone_name="Zone 1 - Main Floor"):
-        cleaned_source = self._sanitize_source(source)
-        with self.lock:
-            self.zone_name = zone_name
-            self.camera_source = cleaned_source
-            if self.cap is not None:
-                try:
-                    self.cap.release()
-                except Exception:
-                    pass
-                self.cap = None
-        print(f"[Stream Manager] Switched camera source to: {self.camera_source} ({self.zone_name})")
-
-    def _open_camera(self):
-        try:
-            print(f"[Stream Manager] Attempting to open video source: {self.camera_source}")
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;5000000"
-            cap = cv2.VideoCapture(self.camera_source)
-            if isinstance(self.camera_source, int):
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                cap.set(cv2.CAP_PROP_FPS, 30)
-            elif isinstance(self.camera_source, str) and self.camera_source.startswith("http"):
-                # Lower buffer size for network streams to avoid lag
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            return cap
-        except Exception as e:
-            print(f"[Stream Error] Open camera failed: {e}")
-            return None
-
-    def _create_fallback_frame(self, message="Awaiting Video Feed..."):
-        """Generates a placeholder frame when camera is connecting or disconnected."""
-        img = 30 * np.ones((480, 640, 3), dtype=np.uint8)
-        cv2.putText(img, "AI SAFETY MONITORING SYSTEM", (140, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 200), 2)
-        cv2.putText(img, message, (180, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
-        cv2.putText(img, f"Source: {self.camera_source}", (140, 270), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
-        return img
-
-    def _capture_loop(self):
-        import numpy as np
-        while self.is_running:
-            # 1. Seamless Static Image Inspection Support (fire pictures, worker photos, test uploads)
-            src_str = str(self.camera_source).strip()
-            is_image = isinstance(self.camera_source, str) and (
-                src_str.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp')) or
-                (os.path.isfile(src_str) and not src_str.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')))
-            )
-            if is_image and os.path.exists(src_str):
-                raw_frame = cv2.imread(src_str)
-                if raw_frame is not None:
-                    processed_frame, stats = self.detector.process_frame(raw_frame, zone_id=self.zone_name)
-                    with self.lock:
-                        self.current_frame = processed_frame
-                        self.current_stats = stats
-                    time.sleep(0.04) # Smooth 25 FPS stream for static image inspection
-                    continue
-
-            # 2. Live Video / Camera Stream Capture
-            if self.cap is None or not self.cap.isOpened():
-                self.cap = self._open_camera()
-                if self.cap is None or not self.cap.isOpened():
-                    # Generate placeholder
-                    fallback = self._create_fallback_frame("Connecting to Camera Stream...")
-                    with self.lock:
-                        self.current_frame = fallback
-                    time.sleep(1.5)
-                    continue
-
-            ret, raw_frame = self.cap.read()
-            if not ret or raw_frame is None:
-                # If reading from a local video file, loop back to frame 0
-                if isinstance(self.camera_source, str) and os.path.isfile(self.camera_source):
-                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    time.sleep(0.03)
-                    continue
-
-                print("[Stream Warning] Frame grab failed, retrying...")
-                with self.lock:
-                    self.current_frame = self._create_fallback_frame("Reconnecting to stream...")
-                if self.cap:
-                    self.cap.release()
-                    self.cap = None
-                time.sleep(1.0)
-                continue
-
-            # Process frame with AI Detector
-            processed_frame, stats = self.detector.process_frame(raw_frame, zone_id=self.zone_name)
-            
-            with self.lock:
-                self.current_frame = processed_frame
-                self.current_stats = stats
-
-            # Small sleep to regulate CPU utilization
-            time.sleep(0.02)
+        self._camera_source = source
+        self._zone_name = zone_name
+        camera_manager.update_camera_source(camera_manager.focused_cam_id, source, zone_name=zone_name)
+        print(f"[Stream Manager] Synchronized camera source to: {source} ({zone_name})")
 
     def get_jpeg(self):
-        with self.lock:
-            if self.current_frame is None:
-                return None
-            ret, jpeg = cv2.imencode('.jpg', self.current_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-            if ret:
-                return jpeg.tobytes()
-            return None
+        return camera_manager.get_focused_jpeg()
 
 stream_manager = VideoStreamManager()
 
@@ -209,6 +121,71 @@ async def video_feed():
         generate_video_feed(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+def generate_camera_feed(cam_id: str):
+    while True:
+        frame_bytes = camera_manager.get_camera_jpeg(cam_id)
+        if frame_bytes is not None:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        time.sleep(0.04) # ~25 FPS
+
+@app.get("/api/stream/{cam_id}")
+async def stream_single_camera(cam_id: str):
+    return StreamingResponse(
+        generate_camera_feed(cam_id),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+# ================= Zone & Multi-Camera Endpoints =================
+@app.get("/api/zones")
+async def get_all_zones():
+    return camera_manager.get_all_zones()
+
+@app.post("/api/zones/active")
+async def switch_active_zone(zone_id: str = Form(...)):
+    success = camera_manager.set_active_zone(zone_id)
+    stream_manager.zone_name = camera_manager.get_active_zone().get("name", "Zone 1 - Main Floor")
+    return {"status": "success" if success else "error", "data": camera_manager.get_all_zones()}
+
+@app.post("/api/zones/add")
+async def add_new_zone(name: str = Form(...), description: str = Form("")):
+    new_z = camera_manager.add_zone(name, description)
+    return {"status": "success", "zone": new_z, "data": camera_manager.get_all_zones()}
+
+@app.post("/api/zones/delete")
+async def delete_zone(zone_id: str = Form(...)):
+    ok = camera_manager.delete_zone(zone_id)
+    return {"status": "success" if ok else "error", "data": camera_manager.get_all_zones()}
+
+@app.get("/api/zone/cameras")
+async def get_active_zone_cameras():
+    return {
+        "active_zone": camera_manager.get_active_zone(),
+        "cameras": camera_manager.get_active_zone_cameras_status(),
+        "focused_cam_id": camera_manager.focused_cam_id
+    }
+
+@app.post("/api/zone/camera/focus")
+async def set_camera_focus(cam_id: str = Form(...)):
+    camera_manager.set_focused_camera(cam_id)
+    return {"status": "success", "focused_cam_id": cam_id}
+
+@app.post("/api/zones/{zone_id}/cameras/add")
+async def add_camera_to_zone(
+    zone_id: str,
+    name: str = Form(...),
+    source: str = Form(...),
+    cam_type: str = Form("industrial_feed"),
+    focus: str = Form("General Safety")
+):
+    new_cam = camera_manager.add_camera_to_zone(zone_id, name, source, cam_type, focus)
+    return {"status": "success" if new_cam else "error", "camera": new_cam}
+
+@app.post("/api/zones/{zone_id}/cameras/delete")
+async def delete_camera_from_zone(zone_id: str, cam_id: str = Form(...)):
+    ok = camera_manager.delete_camera_from_zone(zone_id, cam_id)
+    return {"status": "success" if ok else "error"}
 
 @app.get("/api/stats")
 async def get_stats():
@@ -279,6 +256,7 @@ async def update_sensitivity(
 ):
     det = stream_manager.detector
     result = det.set_sensitivity(level=level, conf_thresh=conf_thresh, cooldown=cooldown)
+    camera_manager.invalidate_static_caches()
     return {"status": "success", **result}
 
 # ================= Master Feature Switchboard & Auto-Pilot Endpoints =================
@@ -298,6 +276,7 @@ async def get_master_control_status():
 async def toggle_master_feature(feature: str = Form(...), enabled: bool = Form(...)):
     det = stream_manager.detector
     det.set_feature_toggle(feature, enabled)
+    camera_manager.invalidate_static_caches()
     matrix = det.get_feature_matrix()
     return {
         "status": "success",
@@ -313,6 +292,7 @@ async def apply_master_preset(preset_name: str = Form(None), preset: str = Form(
     target_preset = preset_name or preset or "clean_ppe_only"
     det = stream_manager.detector
     matrix = det.apply_preset(target_preset)
+    camera_manager.invalidate_static_caches()
     return {
         "status": "success",
         "preset": target_preset,
@@ -367,6 +347,7 @@ async def toggle_module(
     elif module == "gate_mode":
         det.set_gate_mode(enabled)
     
+    camera_manager.invalidate_static_caches()
     return {"status": "success", "module": module, "enabled": enabled}
 
 @app.post("/api/confined-space/reset")
@@ -426,7 +407,8 @@ async def get_telegram_config():
         "enabled": notifier.telegram_enabled,
         "has_token": bool(notifier.telegram_token),
         "token": notifier.telegram_token,
-        "chat_id": notifier.telegram_chat_id
+        "chat_id": notifier.telegram_chat_id,
+        "is_configured": notifier.is_configured()
     }
 
 @app.post("/api/telegram/config")
@@ -435,33 +417,20 @@ async def update_telegram_config(
     chat_id: str = Form(""),
     enabled: bool = Form(True)
 ):
+    token = token.strip()
+    chat_id = chat_id.strip()
     res = notifier.update_config(token, chat_id, enabled)
-    
-    # Persist to .env file
-    env_path = ".env"
-    try:
-        env_lines = []
-        if os.path.exists(env_path):
-            with open(env_path, "r", encoding="utf-8") as f:
-                env_lines = f.readlines()
-        
-        # Filter out old telegram keys
-        filtered = [l for l in env_lines if not l.startswith("TELEGRAM_BOT_TOKEN=") and not l.startswith("TELEGRAM_CHAT_ID=") and not l.startswith("TELEGRAM_ENABLED=")]
-        filtered.append(f"TELEGRAM_BOT_TOKEN={token}\n")
-        filtered.append(f"TELEGRAM_CHAT_ID={chat_id}\n")
-        filtered.append(f"TELEGRAM_ENABLED={'true' if enabled else 'false'}\n")
-        
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.writelines(filtered)
-    except Exception as e:
-        print(f"[Env Save Error] {e}")
-
+    save_env_telegram(token, chat_id, enabled)
     return {"status": "success", "config": res}
 
 @app.post("/api/telegram/test")
 async def test_telegram_alert(token: str = Form(None), chat_id: str = Form(None), mock: bool = Form(False)):
-    if token and chat_id:
-        notifier.update_config(token, chat_id, True)
+    if token is not None and chat_id is not None:
+        token = token.strip()
+        chat_id = chat_id.strip()
+        if token and chat_id:
+            notifier.update_config(token, chat_id, True)
+            save_env_telegram(token, chat_id, True)
     res = notifier.send_test_alert(force_mock=mock)
     return res
 

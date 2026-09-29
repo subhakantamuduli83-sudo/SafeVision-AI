@@ -5,6 +5,20 @@ from typing import Dict, Any, List
 
 DB_PATH = "safety_records.db"
 
+import time
+
+# In-memory caching to eliminate redundant disk I/O on rapid polling
+_summary_cache = None
+_summary_cache_time = 0.0
+_scorecard_cache = None
+_scorecard_cache_time = 0.0
+
+def invalidate_db_cache():
+    """Invalidates the in-memory query cache when new records are inserted or updated."""
+    global _summary_cache, _scorecard_cache
+    _summary_cache = None
+    _scorecard_cache = None
+
 def init_db():
     """Initializes the SQLite database for safety incidents, compliance logs, heatmap coordinates, and weather history."""
     conn = sqlite3.connect(DB_PATH)
@@ -65,6 +79,16 @@ def init_db():
     except Exception:
         pass
 
+    # Performance optimization: SQLite indexes for fast sorting and lookups
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_id_desc ON incidents(id DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_severity ON incidents(severity)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_category ON incidents(category)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_incidents_zone ON incidents(zone)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_weather_id_desc ON weather_logs(id DESC)")
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()
 
@@ -81,6 +105,7 @@ def log_incident(zone: str, incident_type: str, severity: str, details: str, sna
     conn.commit()
     incident_id = cursor.lastrowid
     conn.close()
+    invalidate_db_cache()
     return incident_id
 
 def get_recent_incidents(limit: int = 20):
@@ -100,66 +125,55 @@ def acknowledge_incident(incident_id: int):
     cursor.execute("UPDATE incidents SET acknowledged = 1 WHERE id = ?", (incident_id,))
     conn.commit()
     conn.close()
+    invalidate_db_cache()
 
 def get_incident_summary():
-    """Returns aggregated stats for dashboard counters."""
+    """Returns aggregated stats for dashboard counters with high-performance conditional aggregation and caching."""
+    global _summary_cache, _summary_cache_time
+    now = time.time()
+    if _summary_cache is not None and (now - _summary_cache_time) < 1.5:
+        return _summary_cache.copy()
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM incidents")
-    total_incidents = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Helmet%'")
-    helmet_violations = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Vest%'")
-    vest_violations = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Fire%' OR incident_type LIKE '%Smoke%'")
-    fire_hazards = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Fall%' OR incident_type LIKE '%Down%'")
-    fall_incidents = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Perimeter%' OR incident_type LIKE '%Danger%' OR incident_type LIKE '%Zone%'")
-    perimeter_breaches = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Phone%' OR incident_type LIKE '%Distraction%'")
-    distraction_events = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Proximity%' OR incident_type LIKE '%Forklift%'")
-    proximity_warnings = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Harness%' OR incident_type LIKE '%Height%'")
-    harness_violations = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Suspended%' OR incident_type LIKE '%Drop%' OR incident_type LIKE '%Crane%'")
-    suspended_load_hazards = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Confined%' OR incident_type LIKE '%Overstay%'")
-    confined_space_events = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Hot Work%' OR incident_type LIKE '%Extinguisher%' OR incident_type LIKE '%Welding%'")
-    hot_work_violations = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE incident_type LIKE '%Trench%' OR incident_type LIKE '%Intrusion%' OR incident_type LIKE '%Perimeter Security%'")
-    trench_security_events = cursor.fetchone()[0] or 0
-
+    cursor.execute("""
+        SELECT 
+            COUNT(*),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Helmet%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Vest%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Fire%' OR incident_type LIKE '%Smoke%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Fall%' OR incident_type LIKE '%Down%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Perimeter%' OR incident_type LIKE '%Danger%' OR incident_type LIKE '%Zone%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Phone%' OR incident_type LIKE '%Distraction%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Proximity%' OR incident_type LIKE '%Forklift%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Harness%' OR incident_type LIKE '%Height%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Suspended%' OR incident_type LIKE '%Drop%' OR incident_type LIKE '%Crane%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Confined%' OR incident_type LIKE '%Overstay%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Hot Work%' OR incident_type LIKE '%Extinguisher%' OR incident_type LIKE '%Welding%' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN incident_type LIKE '%Trench%' OR incident_type LIKE '%Intrusion%' OR incident_type LIKE '%Perimeter Security%' THEN 1 ELSE 0 END), 0)
+        FROM incidents
+    """)
+    row = cursor.fetchone()
     conn.close()
-    return {
-        "total_incidents": total_incidents,
-        "helmet_violations": helmet_violations,
-        "vest_violations": vest_violations,
-        "fire_hazards": fire_hazards,
-        "fall_incidents": fall_incidents,
-        "perimeter_breaches": perimeter_breaches,
-        "distraction_events": distraction_events,
-        "proximity_warnings": proximity_warnings,
-        "harness_violations": harness_violations,
-        "suspended_load_hazards": suspended_load_hazards,
-        "confined_space_events": confined_space_events,
-        "hot_work_violations": hot_work_violations,
-        "trench_security_events": trench_security_events
+
+    res = {
+        "total_incidents": row[0] or 0,
+        "helmet_violations": row[1] or 0,
+        "vest_violations": row[2] or 0,
+        "fire_hazards": row[3] or 0,
+        "fall_incidents": row[4] or 0,
+        "perimeter_breaches": row[5] or 0,
+        "distraction_events": row[6] or 0,
+        "proximity_warnings": row[7] or 0,
+        "harness_violations": row[8] or 0,
+        "suspended_load_hazards": row[9] or 0,
+        "confined_space_events": row[10] or 0,
+        "hot_work_violations": row[11] or 0,
+        "trench_security_events": row[12] or 0
     }
+    _summary_cache = res
+    _summary_cache_time = now
+    return res
 
 def get_heatmap_data(limit: int = 150) -> List[Dict[str, Any]]:
     """Retrieves 2D spatial coordinate density points for the floor hazard heatmap."""
@@ -176,21 +190,27 @@ def get_heatmap_data(limit: int = 150) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 def get_safety_scorecard() -> Dict[str, Any]:
-    """Computes an executive factory safety grade, zero-accident streak, and compliance scorecard."""
+    """Computes an executive factory safety grade, zero-accident streak, and compliance scorecard with single query and caching."""
+    global _scorecard_cache, _scorecard_cache_time
+    now = time.time()
+    if _scorecard_cache is not None and (now - _scorecard_cache_time) < 1.5:
+        return _scorecard_cache.copy()
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
-    # Total vs Critical
-    cursor.execute("SELECT COUNT(*) FROM incidents")
-    total = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE severity = 'CRITICAL'")
-    critical_count = cursor.fetchone()[0] or 0
-
-    cursor.execute("SELECT COUNT(*) FROM incidents WHERE severity = 'HIGH'")
-    high_count = cursor.fetchone()[0] or 0
-
+    cursor.execute("""
+        SELECT 
+            COUNT(*),
+            COALESCE(SUM(CASE WHEN severity = 'CRITICAL' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN severity = 'HIGH' THEN 1 ELSE 0 END), 0)
+        FROM incidents
+    """)
+    row = cursor.fetchone()
     conn.close()
+
+    total = row[0] or 0
+    critical_count = row[1] or 0
+    high_count = row[2] or 0
 
     # Safety Score Algorithm: Starts at 100, penalties for violations
     score = max(45, round(100 - (critical_count * 8 + high_count * 2.5), 1))
@@ -212,7 +232,7 @@ def get_safety_scorecard() -> Dict[str, Any]:
         grade_desc = "SAFETY INTERVENTION NEEDED"
         grade_color = "#ef4444"
 
-    return {
+    res = {
         "score": score,
         "grade": grade,
         "grade_desc": grade_desc,
@@ -223,6 +243,9 @@ def get_safety_scorecard() -> Dict[str, Any]:
         "zero_accident_days": max(1, 14 - critical_count),
         "osha_compliance_pct": min(100.0, max(50.0, score + 2.0))
     }
+    _scorecard_cache = res
+    _scorecard_cache_time = now
+    return res
 
 def log_weather_reading(timestamp: str, temperature: float, humidity: float, heat_index: float,
                         wind_speed: float, pressure: float, condition: str, risk_level: str,

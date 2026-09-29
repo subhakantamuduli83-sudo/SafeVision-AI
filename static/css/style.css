@@ -3109,3 +3109,356 @@ body {
         padding: 12px !important;
     }
 }
+
+/* ================= Enterprise Zone & CCTV Multi-Grid Styling ================= */
+.zone-cctv-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0B132B;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+    padding: 8px 12px;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.zone-pills-scroll {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+}
+
+.zone-pill {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: #CBD5E1;
+    font-size: 0.76rem;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.zone-pill:hover {
+    border-color: #38BDF8;
+    color: #FFFFFF;
+    background: rgba(56, 189, 248, 0.15);
+}
+
+.zone-pill.active {
+    background: rgba(56, 189, 248, 0.22);
+    border-color: #38BDF8;
+    color: #38BDF8;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+}
+
+.pill-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10B981;
+    box-shadow: 0 0 6px #10B981;
+}
+
+.cam-count-tag {
+    background: rgba(0, 0, 0, 0.4);
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    color: #94A3B8;
+}
+
+.btn-add-zone-pill {
+    background: transparent;
+    border: 1px dashed rgba(56, 189, 248, 0.4);
+    color: #38BDF8;
+    font-size: 0.74rem;
+    padding: 4px 10px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.btn-add-zone-pill:hover {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: #38BDF8;
+}
+
+.cctv-view-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.view-mode-toggle {
+    display: inline-flex;
+    background: #0F172A;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.view-btn {
+    background: transparent;
+    border: none;
+    color: #94A3B8;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.view-btn.active {
+    background: #38BDF8;
+    color: #0F172A;
+    font-weight: 700;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+.btn-manage-cams {
+    font-size: 0.72rem;
+    padding: 4px 10px;
+    border-color: #38BDF8;
+    color: #38BDF8;
+}
+
+/* ================= Multi-Grid Layout ================= */
+.cctv-grid-layout {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 8px;
+    width: 100%;
+    height: 100%;
+    padding: 8px;
+    background: #060B19;
+    box-sizing: border-box;
+}
+
+.cctv-card {
+    position: relative;
+    background: #0F172A;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.cctv-card:hover {
+    border-color: #38BDF8;
+    transform: translateY(-1px);
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
+}
+
+.cctv-card.has-hazard {
+    border-color: #EF4444 !important;
+    animation: hazardPulse 1.5s infinite alternate;
+}
+
+@keyframes hazardPulse {
+    from { box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+    to { box-shadow: 0 0 20px rgba(239, 68, 68, 0.9); }
+}
+
+.cctv-card-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.92) 0%, rgba(15, 23, 42, 0.6) 75%, transparent 100%);
+    padding: 6px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 3;
+}
+
+.cctv-card-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #F8FAFC;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.cctv-live-tag {
+    font-size: 0.62rem;
+    font-weight: 800;
+    color: #10B981;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    padding: 1px 6px;
+    border-radius: 10px;
+}
+
+.cctv-card-media {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+}
+
+.cctv-card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.cctv-card-footer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(0deg, rgba(15, 23, 42, 0.94) 0%, rgba(15, 23, 42, 0.6) 80%, transparent 100%);
+    padding: 6px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.68rem;
+    color: #CBD5E1;
+    z-index: 3;
+}
+
+.cctv-focus-tag {
+    color: #94A3B8;
+    font-size: 0.64rem;
+}
+
+.cctv-btn-expand {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: #38BDF8;
+    font-size: 0.62rem;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+/* ================= Single Focus Layout ================= */
+.cctv-single-layout {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    background: #000;
+}
+
+.single-video-stage {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cctv-thumbnail-strip {
+    display: flex;
+    gap: 8px;
+    padding: 6px 10px;
+    background: rgba(15, 23, 42, 0.95);
+    border-top: 1px solid rgba(56, 189, 248, 0.2);
+    overflow-x: auto;
+    align-items: center;
+}
+
+.cctv-thumb-card {
+    min-width: 90px;
+    max-width: 110px;
+    height: 58px;
+    position: relative;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1.5px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+
+.cctv-thumb-card:hover, .cctv-thumb-card.active-thumb {
+    border-color: #38BDF8;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+    transform: scale(1.03);
+}
+
+.cctv-thumb-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.cctv-thumb-title {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0,0,0,0.75);
+    font-size: 0.58rem;
+    color: #FFF;
+    padding: 1px 3px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ================= Modal Camera Management Cards ================= */
+.modal-camera-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+.modal-cam-card {
+    background: #0F172A;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.modal-cam-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-cam-name {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #F8FAFC;
+}
+
+.modal-cam-source {
+    font-size: 0.72rem;
+    color: #94A3B8;
+    word-break: break-all;
+}
+
+.modal-cam-focus {
+    font-size: 0.72rem;
+    color: #38BDF8;
+}
+

@@ -28,7 +28,7 @@
                 <span class="pulse-dot"></span>
                 <span class="status-label">EDGE AI ACTIVE</span>
             </div>
-            <div class="zone-badge" id="currentZoneBadge">📍 Zone 1 - Main Floor</div>
+            <div class="zone-badge" id="currentZoneBadge" style="cursor: pointer;" title="Click to manage & switch industrial zones">📍 <span id="navZoneText">Zone 1 - Main Floor</span> ⚙️</div>
             <div class="clock-display" id="clockDisplay">00:00:00</div>
         </div>
 
@@ -151,10 +151,36 @@
         
         <!-- Left Column: Video Feed & Live HUD -->
         <section class="video-section card">
+            <!-- Zone & CCTV Matrix Ribbon Toolbar -->
+            <div class="zone-cctv-bar">
+                <div class="zone-pills-scroll" id="zoneTabsList">
+                    <!-- Populated dynamically via JS: Zone 1, Zone 2, etc. -->
+                    <button type="button" class="zone-pill active" data-zone="zone_1">
+                        <span class="pill-dot"></span> 📍 Zone 1 - Main Floor <span class="cam-count-tag" id="zone1CamCount">4 Cams</span>
+                    </button>
+                    <button type="button" class="btn-add-zone-pill" id="btnQuickAddZone" title="Add New Industrial Zone">
+                        ➕ Add Zone
+                    </button>
+                </div>
+                <div class="cctv-view-controls">
+                    <div class="view-mode-toggle">
+                        <button type="button" class="view-btn active" id="btnViewGrid" title="Display all cameras for active zone in a live Multi-Grid">
+                            🎛️ Multi-Grid
+                        </button>
+                        <button type="button" class="view-btn" id="btnViewFocus" title="Focus on single camera in full view">
+                            🔍 Single Cam
+                        </button>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline btn-manage-cams" id="btnOpenZoneModal" title="Open Custom Zone & Camera Manager">
+                        ⚙️ Setup Zone / Cams
+                    </button>
+                </div>
+            </div>
+
             <div class="card-header">
                 <div class="header-left">
                     <span class="live-tag">● LIVE STREAM</span>
-                    <span class="feed-source-label" id="activeSourceLabel">Source: Camera 0</span>
+                    <span class="feed-source-label" id="activeSourceLabel">Zone 1: 4 Cams Active</span>
                     <span class="mode-badge" id="liveModeBadge" style="display: none;">🚪 GATE INSPECTOR</span>
                 </div>
                 <div class="header-right">
@@ -164,7 +190,20 @@
             </div>
 
             <div class="video-container" id="videoWrapper">
-                <img src="/video_feed" id="liveVideoFeed" alt="Live CCTV AI Feed" class="video-player">
+                <!-- 1. CCTV Multi-Camera Grid View (Default) -->
+                <div class="cctv-grid-layout" id="cctvGridLayout">
+                    <!-- Dynamic Camera Cards injected by JS -->
+                </div>
+
+                <!-- 2. Single Focus Camera View (Shown when Focus Mode or Tile clicked) -->
+                <div class="cctv-single-layout" id="cctvSingleLayout" style="display: none;">
+                    <div class="single-video-stage">
+                        <img src="/video_feed" id="liveVideoFeed" alt="Live CCTV AI Feed" class="video-player">
+                    </div>
+                    <div class="cctv-thumbnail-strip" id="cctvThumbnailStrip">
+                        <!-- Mini camera thumbnails injected by JS -->
+                    </div>
+                </div>
                 
                 <!-- Live Emergency Overlay (Shown only during fire/smoke/fall) -->
                 <div class="hazard-alert-banner" id="hazardBanner" style="display: none;">
@@ -559,12 +598,18 @@
                     </label>
                 </div>
                 <div class="form-group">
-                    <label>Telegram Bot Token:</label>
-                    <input type="password" id="tgBotTokenInput" class="form-control" placeholder="123456789:ABCdefGHIjkLMNopQRstUVw">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label style="margin: 0;">Telegram Bot Token:</label>
+                        <button type="button" id="btnToggleTokenVisibility" style="background: none; border: none; color: #38BDF8; font-size: 0.75rem; cursor: pointer; padding: 0;">👁️ Show Token</button>
+                    </div>
+                    <input type="password" id="tgBotTokenInput" class="form-control" placeholder="123456789:ABCdefGHIjkLMNopQRstUVw" autocomplete="off">
                 </div>
                 <div class="form-group">
-                    <label>Telegram Chat ID:</label>
+                    <label>Telegram Numeric Chat ID: <small style="color: #94A3B8; font-weight: normal;">(Must be numeric, not @username)</small></label>
                     <input type="text" id="tgChatIdInput" class="form-control" placeholder="e.g. 987654321">
+                    <small style="color: #94A3B8; font-size: 0.72rem; display: block; margin-top: 3px;">
+                        💡 Send any message to <a href="https://t.me/userinfobot" target="_blank" rel="noopener" style="color: #38BDF8;">@userinfobot</a> on Telegram to find your numeric <code>Id</code>.
+                    </small>
                 </div>
                 <div class="telegram-test-box" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
                     <button type="button" class="btn btn-outline" id="btnTestTelegram">🚀 Send Live Alert to Phone</button>
@@ -576,6 +621,93 @@
                     <button type="submit" class="btn btn-primary">Save Configuration</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Enterprise Zone & Multi-Camera Setup Modal -->
+    <div class="modal-backdrop" id="zoneCameraModal" style="display: none;">
+        <div class="modal-box" style="max-width: 860px; width: 95%;">
+            <div class="modal-header">
+                <h2>🏭 Industrial Zone & Multi-Camera Setup</h2>
+                <button class="modal-close" id="btnCloseZoneModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">
+                    Organize your plant by industrial zones. Each zone hosts its own dedicated multi-camera CCTV matrix (Webcam, RTSP IP Cameras, or Live Feeds).
+                </p>
+
+                <!-- Zone Selector & Actions Bar -->
+                <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.7); padding: 12px 16px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.25); margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label style="font-weight: 600; color: #94A3B8; margin: 0; font-size: 0.85rem;">Active Zone:</label>
+                        <select id="modalZoneSelect" class="form-control" style="width: auto; min-width: 220px; font-weight: 700; color: #38BDF8; background: #0F172A; border-color: #38BDF8;">
+                            <!-- Filled dynamically by JS -->
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="btn btn-sm btn-accent" id="btnModalAddZone">➕ Create New Zone</button>
+                        <button type="button" class="btn btn-sm btn-outline" id="btnModalDeleteZone" style="border-color: #EF4444; color: #EF4444;">🗑️ Delete Zone</button>
+                    </div>
+                </div>
+
+                <!-- Form: Create New Zone (Hidden by default) -->
+                <div id="newZoneFormBox" style="display: none; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+                    <h4 style="color: #38BDF8; margin-top: 0; margin-bottom: 8px; font-size: 0.9rem;">➕ Create New Industrial Zone</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1.2fr auto; gap: 10px; align-items: end;">
+                        <div>
+                            <label style="font-size: 0.78rem;">Zone Name:</label>
+                            <input type="text" id="newZoneNameInput" class="form-control" placeholder="e.g. Zone 2 - Scaffolding Area">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.78rem;">Description / Hazard Type:</label>
+                            <input type="text" id="newZoneDescInput" class="form-control" placeholder="e.g. High elevation steel erection">
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                            <button type="button" class="btn btn-sm btn-accent" id="btnSubmitNewZone">Save Zone</button>
+                            <button type="button" class="btn btn-sm btn-secondary" id="btnCancelNewZone">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cameras in Active Zone List -->
+                <div style="margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3 style="font-size: 0.92rem; color: #E2E8F0; margin: 0;">📹 Cameras Configured in <span id="lblActiveZoneName" style="color: #38BDF8;">Zone 1</span>:</h3>
+                        <button type="button" class="btn btn-sm btn-primary" id="btnModalAddCamera">➕ Add Camera to Zone</button>
+                    </div>
+
+                    <!-- Form: Add New Camera (Hidden by default) -->
+                    <div id="newCameraFormBox" style="display: none; background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+                        <h4 style="color: #10B981; margin-top: 0; margin-bottom: 8px; font-size: 0.9rem;">📹 Add Camera to Zone</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 10px; margin-bottom: 10px;">
+                            <div>
+                                <label style="font-size: 0.78rem;">Camera Name:</label>
+                                <input type="text" id="newCamNameInput" class="form-control" placeholder="e.g. CAM 05 - East Scaffolding">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.78rem;">Video Source (RTSP / USB / DroidCam / Image):</label>
+                                <input type="text" id="newCamSourceInput" class="form-control" placeholder="0 or rtsp://admin:pass@192.168.1.10/live">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.78rem;">Hazard Focus:</label>
+                                <input type="text" id="newCamFocusInput" class="form-control" placeholder="e.g. Height Harness / Fire">
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                            <button type="button" class="btn btn-sm btn-accent" id="btnSubmitNewCam">Save Camera</button>
+                            <button type="button" class="btn btn-sm btn-secondary" id="btnCancelNewCam">Cancel</button>
+                        </div>
+                    </div>
+
+                    <!-- Camera Cards Container -->
+                    <div id="modalCameraList" class="modal-camera-grid">
+                        <!-- Injected dynamically by JS -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btnCloseZoneFooter">Done</button>
+            </div>
         </div>
     </div>
 
