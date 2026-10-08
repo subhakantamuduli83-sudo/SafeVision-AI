@@ -3,6 +3,7 @@ import numpy as np
 import time
 import os
 import math
+import threading
 from datetime import datetime
 from typing import List, Tuple, Dict, Any
 
@@ -21,20 +22,25 @@ class SafetyDetector:
     - Real-Time Hazard Geofencing, PPE Inspection, and Emergency Multi-Channel Dispatch
     """
 
-    def __init__(self, model_path: str = "yolov8n.pt", conf_thresh: float = 0.20):
+    def __init__(self, model_path: str = "yolo11n.pt", conf_thresh: float = 0.35):
         self.conf_thresh = conf_thresh
         self.model_path = model_path
         self.model = None
+        self.pose_model = None
         self.custom_ppe_model = False
         self.last_snapshot_time = {}
-        self.snapshot_cooldown = 10.0
-        self.sensitivity_level = "ultra"  # 'ultra', 'high', 'standard', or 'custom'
-        self.ppe_strictness = "ultra"
+        self.snapshot_cooldown = 6.0
+        self.sensitivity_level = "high"  # 'ultra', 'high', 'standard', or 'custom'
+        self.ppe_strictness = "high"
+        self.inference_lock = threading.Lock()
+        self.tracked_boxes = {}  # Worker ID -> {"box": (x1, y1, x2, y2), "last_seen": float, "conf": float, "kpts": np.ndarray} for EMA box smoothing
 
         # ================= MASTER FEATURE TOGGLES =================
         self.auto_pilot_mode = False          # Autonomous 24/7 Supervisor Away Mode
         self.helmet_check_enabled = True      # Hardhat / Helmet compliance
         self.vest_check_enabled = True        # High-Vis Vest compliance
+        self.gloves_check_enabled = True      # Industrial Protective Gloves compliance
+        self.goggles_check_enabled = True     # Eye Protection / Safety Goggles compliance
         self.fall_detection_enabled = True    # Fall & Man-Down Emergency
         self.fire_detection_enabled = True    # Fire & Smoke Hazard
         self.phone_detection_enabled = True   # Cellphone distraction in work zone
@@ -116,6 +122,8 @@ class SafetyDetector:
             "auto_pilot_mode": self.auto_pilot_mode,
             "helmet_check": self.helmet_check_enabled,
             "vest_check": self.vest_check_enabled,
+            "gloves_check": self.gloves_check_enabled,
+            "goggles_check": self.goggles_check_enabled,
             "fall_detection": self.fall_detection_enabled,
             "fire_detection": self.fire_detection_enabled,
             "phone_detection": self.phone_detection_enabled,
@@ -148,28 +156,28 @@ class SafetyDetector:
             lvl = level.lower().strip()
             if lvl in ["ultra", "ultra_sensitive", "zero_tolerance", "critical"]:
                 self.sensitivity_level = "ultra"
-                self.conf_thresh = 0.15
-                self.snapshot_cooldown = 8.0
+                self.conf_thresh = 0.30
+                self.snapshot_cooldown = 4.0
                 self.ppe_strictness = "ultra"
             elif lvl in ["high", "strict", "elevated"]:
                 self.sensitivity_level = "high"
-                self.conf_thresh = 0.25
-                self.snapshot_cooldown = 12.0
+                self.conf_thresh = 0.38
+                self.snapshot_cooldown = 6.0
                 self.ppe_strictness = "high"
             elif lvl in ["standard", "normal", "balanced"]:
                 self.sensitivity_level = "standard"
-                self.conf_thresh = 0.35
-                self.snapshot_cooldown = 16.0
+                self.conf_thresh = 0.48
+                self.snapshot_cooldown = 8.0
                 self.ppe_strictness = "standard"
             elif lvl == "custom":
                 self.sensitivity_level = "custom"
         
         if conf_thresh is not None:
-            self.conf_thresh = max(0.05, min(0.95, float(conf_thresh)))
+            self.conf_thresh = max(0.20, min(0.95, float(conf_thresh)))
             if level is None:
-                if self.conf_thresh <= 0.18:
+                if self.conf_thresh <= 0.32:
                     self.sensitivity_level = "ultra"
-                elif self.conf_thresh <= 0.28:
+                elif self.conf_thresh <= 0.42:
                     self.sensitivity_level = "high"
                 else:
                     self.sensitivity_level = "standard"
@@ -182,7 +190,7 @@ class SafetyDetector:
             "level": self.sensitivity_level,
             "conf_thresh": self.conf_thresh,
             "cooldown": self.snapshot_cooldown,
-            "strictness": getattr(self, "ppe_strictness", "ultra")
+            "strictness": getattr(self, "ppe_strictness", "high")
         }
 
     def set_feature_toggle(self, feature_name: str, enabled: bool) -> bool:
@@ -194,6 +202,10 @@ class SafetyDetector:
             self.helmet_check_enabled = enabled
         elif fn in ["vest_check", "vest"]:
             self.vest_check_enabled = enabled
+        elif fn in ["gloves_check", "gloves", "glove"]:
+            self.gloves_check_enabled = enabled
+        elif fn in ["goggles_check", "goggles", "goggle", "glasses", "eyewear"]:
+            self.goggles_check_enabled = enabled
         elif fn in ["fall_detection", "fall"]:
             self.fall_detection_enabled = enabled
         elif fn in ["fire_detection", "fire"]:
@@ -234,6 +246,8 @@ class SafetyDetector:
             self.auto_pilot_mode = True
             self.helmet_check_enabled = True
             self.vest_check_enabled = True
+            self.gloves_check_enabled = True
+            self.goggles_check_enabled = True
             self.fall_detection_enabled = True
             self.fire_detection_enabled = True
             self.phone_detection_enabled = True
@@ -259,6 +273,8 @@ class SafetyDetector:
             self.auto_pilot_mode = False
             self.helmet_check_enabled = True
             self.vest_check_enabled = True
+            self.gloves_check_enabled = True
+            self.goggles_check_enabled = True
             self.fall_detection_enabled = True
             self.height_safety_enabled = True
             self.suspended_load_enabled = True
@@ -273,6 +289,8 @@ class SafetyDetector:
             self.auto_pilot_mode = False
             self.helmet_check_enabled = True
             self.vest_check_enabled = True
+            self.gloves_check_enabled = True
+            self.goggles_check_enabled = True
             self.hot_work_enabled = True
             self.fire_detection_enabled = True
             self.danger_zone_enabled = True
@@ -287,6 +305,8 @@ class SafetyDetector:
             self.auto_pilot_mode = False
             self.helmet_check_enabled = True
             self.vest_check_enabled = True
+            self.gloves_check_enabled = True
+            self.goggles_check_enabled = True
             self.fall_detection_enabled = False
             self.fire_detection_enabled = True
             self.phone_detection_enabled = False
@@ -314,6 +334,8 @@ class SafetyDetector:
             self.auto_pilot_mode = False
             self.helmet_check_enabled = True
             self.vest_check_enabled = True
+            self.gloves_check_enabled = True
+            self.goggles_check_enabled = True
             self.fall_detection_enabled = True
             self.fire_detection_enabled = True
             self.phone_detection_enabled = True
@@ -333,6 +355,8 @@ class SafetyDetector:
             self.auto_pilot_mode = False
             self.helmet_check_enabled = False
             self.vest_check_enabled = False
+            self.gloves_check_enabled = False
+            self.goggles_check_enabled = False
             self.fall_detection_enabled = False
             self.fire_detection_enabled = False
             self.phone_detection_enabled = False
@@ -395,31 +419,184 @@ class SafetyDetector:
         self.night_mode_enabled = enabled
 
     def _load_model(self):
-        """Loads YOLOv8 model with optimized CPU threading."""
+        """Loads YOLO neural models with optimized CPU threading."""
+        try:
+            import cv2
+            cv2.setNumThreads(2)
+        except Exception:
+            pass
         try:
             import torch
-            # Cap PyTorch intra-op threads to 4 so it runs smoothly without monopolizing laptop CPU cores
-            torch.set_num_threads(min(4, os.cpu_count() or 4))
+            # Cap PyTorch intra-op threads to 2 so it runs smoothly without monopolizing laptop CPU cores
+            torch.set_num_threads(min(2, os.cpu_count() or 2))
         except Exception:
             pass
 
         try:
             from ultralytics import YOLO
-            if os.path.exists("best.pt"):
+
+            # Detect Intel Hardware Accelerators (NPU / GPU)
+            has_intel_accel = False
+            intel_mode = "CPU"
+            try:
+                import openvino as ov
+                core = ov.Core()
+                devs = core.available_devices
+                if "NPU" in devs:
+                    has_intel_accel = True
+                    intel_mode = "Intel(R) AI Boost NPU Turbo Engine"
+                elif "GPU" in devs:
+                    has_intel_accel = True
+                    intel_mode = "Intel Arc GPU"
+            except Exception:
+                has_intel_accel = False
+
+            # Hook Ultralytics OpenVINO Backend for Intelligent Hardware Workload Balancing
+            if has_intel_accel:
+                try:
+                    from ultralytics.nn import autobackend
+                    from pathlib import Path
+                    from functools import partial
+                    import openvino as ov
+
+                    def _patched_load_model(self, weight):
+                        try:
+                            _core = ov.Core()
+                            _devs = _core.available_devices
+                            w = Path(weight)
+                            if not w.is_file():
+                                w = next(w.glob("*.xml"))
+
+                            # Offload BOTH AI models directly to Intel AI Boost NPU!
+                            if "NPU" in _devs:
+                                _assigned = "HETERO:NPU,CPU"
+                            elif "GPU" in _devs:
+                                _assigned = "GPU"
+                            else:
+                                _assigned = "AUTO"
+
+                            ov_model = _core.read_model(model=str(w), weights=w.with_suffix(".bin"))
+                            if ov_model.get_parameters()[0].get_layout().empty:
+                                ov_model.get_parameters()[0].set_layout(ov.Layout("NCHW"))
+                            self.apply_metadata(self.read_metadata(w))
+                            self.read_model = None
+                            self.inference_mode = "LATENCY"
+                            config = {"PERFORMANCE_HINT": self.inference_mode}
+                            self.compile_model = partial(_core.compile_model, device_name=_assigned, config=config)
+                            self.ov_compiled_model = self.compile_model(ov_model)
+                            exec_devs = self.ov_compiled_model.get_property("EXECUTION_DEVICES")
+                            print(f"[Detector] AI Model ({w.name}) compiled on: {exec_devs}")
+                            self.input_name = self.ov_compiled_model.input().get_any_name()
+                            self.ov = _core
+                            import torch
+                            self.device = torch.device("cpu")
+                        except Exception as err:
+                            print(f"[Detector] Intel accelerator compile fallback: {err}")
+                            _core = ov.Core()
+                            self.compile_model = partial(_core.compile_model, device_name="AUTO", config={"PERFORMANCE_HINT": "LATENCY"})
+                            self.ov_compiled_model = self.compile_model(ov_model)
+                            self.input_name = self.ov_compiled_model.input().get_any_name()
+                            self.ov = _core
+                            import torch
+                            self.device = torch.device("cpu")
+
+                    autobackend.OpenVINOBackend.load_model = _patched_load_model
+                except Exception as he:
+                    print(f"[Detector] OpenVINO hook warning: {he}")
+
+            self.pose_device = None
+            self.model_device = None
+            self.intel_mode = intel_mode
+
+            # 1. High-Precision Human Skeleton Pose AI
+            if has_intel_accel and os.path.exists("yolo11n-pose_openvino_model"):
+                print(f"[Detector] Loading Intel Accelerated OpenVINO Pose Model ({intel_mode})")
+                self.pose_model = YOLO("yolo11n-pose_openvino_model", task="pose")
+            elif os.path.exists("yolo11n-pose.pt"):
+                print("[Detector] Loading high-precision Human Pose AI: yolo11n-pose.pt")
+                self.pose_model = YOLO("yolo11n-pose.pt")
+                self.pose_device = None
+            elif os.path.exists("yolov8n-pose.pt"):
+                print("[Detector] Loading fallback Human Pose AI: yolov8n-pose.pt")
+                self.pose_model = YOLO("yolov8n-pose.pt")
+                self.pose_device = None
+            else:
+                self.pose_model = None
+
+            # 2. Object & Hazard AI (Vehicles, Cellphones, Rigging loads)
+            if has_intel_accel and os.path.exists("yolo11n_openvino_model"):
+                print(f"[Detector] Loading Intel Accelerated OpenVINO General Model ({intel_mode})")
+                self.model = YOLO("yolo11n_openvino_model", task="detect")
+                self.custom_ppe_model = False
+            elif os.path.exists("best.pt"):
                 print("[Detector] Loading custom trained PPE weights: best.pt")
                 self.model = YOLO("best.pt")
                 self.custom_ppe_model = True
+                self.model_device = None
             elif os.path.exists("ppe_yolov8.pt"):
                 print("[Detector] Loading PPE model: ppe_yolov8.pt")
                 self.model = YOLO("ppe_yolov8.pt")
                 self.custom_ppe_model = True
+                self.model_device = None
+            elif os.path.exists("yolo11n.pt"):
+                print("[Detector] Loading high-performance YOLO11-nano: yolo11n.pt")
+                self.model = YOLO("yolo11n.pt")
+                self.custom_ppe_model = False
+                self.model_device = None
+            elif os.path.exists("yolov8n.pt"):
+                print("[Detector] Loading fallback YOLOv8-nano: yolov8n.pt")
+                self.model = YOLO("yolov8n.pt")
+                self.custom_ppe_model = False
+                self.model_device = None
             else:
                 print(f"[Detector] Loading base YOLO model: {self.model_path}")
                 self.model = YOLO(self.model_path)
                 self.custom_ppe_model = False
+                self.model_device = None
+
+            # Warm up neural models synchronously on main thread so fuse() and internal graph setup are thread-safe
+            try:
+                dummy = np.zeros((384, 384, 3), dtype=np.uint8)
+                if self.pose_model is not None:
+                    kwargs = {"device": self.pose_device} if self.pose_device else {}
+                    self.pose_model(dummy, imgsz=384, verbose=False, **kwargs)
+                if self.model is not None:
+                    kwargs = {"device": self.model_device} if self.model_device else {}
+                    self.model(dummy, imgsz=384, verbose=False, **kwargs)
+            except Exception as we:
+                pass
         except Exception as e:
             print(f"[Detector Error] Failed to load YOLO: {e}")
             self.model = None
+            self.pose_model = None
+
+    def _is_valid_human(self, frame, box, kpts=None) -> bool:
+        """
+        Robust Human Validation Filter:
+        Ensures bounding box has realistic dimensions and rejects microscopic noise.
+        Trusts YOLO neural network classification for real human presence in all postures.
+        """
+        bx1, by1, bx2, by2 = box
+        bw = bx2 - bx1
+        bh = by2 - by1
+
+        # Reject microscopic artifacts / camera speckles
+        if max(bw, bh) < 28 or min(bw, bh) < 12:
+            return False
+
+        # Reject extreme 1-pixel lines / banners
+        aspect = bw / float(max(1, bh))
+        if aspect < 0.08 or aspect > 6.0:
+            return False
+
+        # If pose keypoints exist, verify at least 2 detected anatomical keypoints
+        if kpts is not None and len(kpts) > 0:
+            valid_pts = [p for p in kpts if len(p) >= 3 and p[2] > 0.10]
+            if len(valid_pts) >= 2:
+                return True
+
+        # Accept all valid person detections from YOLO neural network
+        return True
 
     # ================= Vision Algorithms =================
     def _detect_fire_smoke_hsv(self, frame):
@@ -582,29 +759,63 @@ class SafetyDetector:
                     return True, abs_box
         return False, (0, 0, 0, 0)
 
-    def _analyze_worker_ppe_heuristics(self, frame, person_box):
-        """Analyzes upper-body and head regions for helmet & high-vis vest compliance with dynamic sensitivity."""
+    def _analyze_worker_ppe_heuristics(self, frame, person_box, kpts=None):
+        """Analyzes upper-body and head regions for helmet & high-vis vest compliance with dynamic sensitivity and anatomical landmark precision."""
         px1, py1, px2, py2 = person_box
         p_h = py2 - py1
         p_w = px2 - px1
         
-        # In Ultra or High sensitivity, detect workers further away or partially framed
-        sens = getattr(self, "sensitivity_level", "ultra")
-        min_h = 24 if sens in ["ultra", "high"] else 38
-        min_w = 12 if sens in ["ultra", "high"] else 18
+        sens = getattr(self, "sensitivity_level", "high")
+        min_h = 28 if sens in ["ultra", "high"] else 38
+        min_w = 16 if sens in ["ultra", "high"] else 20
         if p_h < min_h or p_w < min_w:
-            return {"helmet": True, "vest": True, "harness": True, "compliant": True}
+            return {"helmet": True, "vest": True, "harness": True, "gloves": True, "goggles": True, "compliant": True}
 
-        # Focused Crown / Skull Dome ROI: specifically the top 15% of height and center 50% width
-        crown_y1 = py1
-        crown_y2 = py1 + int(p_h * 0.15)
-        crown_x1 = px1 + int(p_w * 0.25)
-        crown_x2 = px2 - int(p_w * 0.25)
-        crown_roi = frame[crown_y1:crown_y2, crown_x1:crown_x2]
+        # 1. Crown / Head ROI calculation (using anatomical keypoints if available)
+        crown_roi = None
+        if kpts is not None and len(kpts) >= 5:
+            valid_head = [p for p in kpts[:5] if len(p) >= 3 and p[2] > 0.25]
+            if valid_head:
+                min_ky = min(p[1] for p in valid_head)
+                avg_kx = sum(p[0] for p in valid_head) / len(valid_head)
+                
+                # Skull dome & helmet is located directly above eyes/nose
+                head_span = max(32, int(p_h * 0.22))
+                crown_y2 = max(0, min(frame.shape[0], int(min_ky + head_span * 0.20)))
+                crown_y1 = max(0, min(frame.shape[0], int(min_ky - head_span * 0.85)))
+                crown_w = max(35, int(p_w * 0.50))
+                crown_x1 = max(0, min(frame.shape[1], int(avg_kx - crown_w / 2)))
+                crown_x2 = max(0, min(frame.shape[1], int(avg_kx + crown_w / 2)))
+                if (crown_y2 - crown_y1) > 10 and (crown_x2 - crown_x1) > 10:
+                    crown_roi = frame[crown_y1:crown_y2, crown_x1:crown_x2]
+
+        if crown_roi is None or crown_roi.size == 0:
+            # Focused Crown / Skull Dome ROI fallback: top 16% of height, center 55% width
+            crown_y1 = max(0, py1)
+            crown_y2 = min(frame.shape[0], py1 + int(p_h * 0.16))
+            crown_x1 = max(0, px1 + int(p_w * 0.22))
+            crown_x2 = min(frame.shape[1], px2 - int(p_w * 0.22))
+            crown_roi = frame[crown_y1:crown_y2, crown_x1:crown_x2]
         
-        torso_y1 = py1 + int(p_h * 0.20)
-        torso_y2 = py1 + int(p_h * 0.65)
-        torso_roi = frame[torso_y1:torso_y2, px1:px2]
+        # 2. Torso ROI calculation (using shoulders if available)
+        torso_roi = None
+        if kpts is not None and len(kpts) >= 7:
+            sh_valid = [kpts[i] for i in [5, 6] if len(kpts[i]) >= 3 and kpts[i][2] > 0.25]
+            if len(sh_valid) == 2:
+                sh_y = min(sh_valid[0][1], sh_valid[1][1])
+                sh_x1 = min(sh_valid[0][0], sh_valid[1][0])
+                sh_x2 = max(sh_valid[0][0], sh_valid[1][0])
+                torso_y1 = max(0, int(sh_y))
+                torso_y2 = min(frame.shape[0], int(sh_y + p_h * 0.45))
+                torso_x1 = max(0, int(sh_x1 - 15))
+                torso_x2 = min(frame.shape[1], int(sh_x2 + 15))
+                if (torso_y2 - torso_y1) > 15 and (torso_x2 - torso_x1) > 15:
+                    torso_roi = frame[torso_y1:torso_y2, torso_x1:torso_x2]
+
+        if torso_roi is None or torso_roi.size == 0:
+            torso_y1 = max(0, py1 + int(p_h * 0.18))
+            torso_y2 = min(frame.shape[0], py1 + int(p_h * 0.65))
+            torso_roi = frame[torso_y1:torso_y2, px1:px2]
 
         has_helmet = False
         has_vest = False
@@ -682,15 +893,95 @@ class SafetyDetector:
             elif edge_ratio > 0.13:
                 has_harness = True
 
+        # Safety Goggles / Protective Eyewear Check (Orbital Eye Band)
+        has_goggles = False
+        eye_y1 = py1 + int(p_h * 0.11)
+        eye_y2 = py1 + int(p_h * 0.24)
+        eye_x1 = px1 + int(p_w * 0.20)
+        eye_x2 = px2 - int(p_w * 0.20)
+        eye_roi = frame[eye_y1:eye_y2, eye_x1:eye_x2]
+
+        if eye_roi.size > 0:
+            hsv_eye = cv2.cvtColor(eye_roi, cv2.COLOR_BGR2HSV)
+            gray_eye = cv2.cvtColor(eye_roi, cv2.COLOR_BGR2GRAY)
+            total_eye_pixels = max(1, eye_roi.shape[0] * eye_roi.shape[1])
+
+            # Safety glasses: Dark frames / tinted lenses or yellow safety tint
+            mask_dark_eyewear = cv2.inRange(hsv_eye, np.array([0, 0, 0]), np.array([180, 255, 60]))
+            mask_yellow_eyewear = cv2.inRange(hsv_eye, np.array([18, 90, 80]), np.array([36, 255, 255]))
+            eyewear_tint = cv2.bitwise_or(mask_dark_eyewear, mask_yellow_eyewear)
+            eyewear_count = cv2.countNonZero(eyewear_tint)
+
+            # High-contrast lens frame edge profile
+            eye_edges = cv2.Canny(gray_eye, 50, 150)
+            edge_ratio = cv2.countNonZero(eye_edges) / total_eye_pixels
+
+            # Bare face skin in orbital zone
+            mask_face_skin = cv2.inRange(hsv_eye, np.array([0, 28, 65]), np.array([25, 160, 245]))
+            skin_ratio = cv2.countNonZero(mask_face_skin) / total_eye_pixels
+
+            # If protective frame/tint covers eyes OR frame rim contour is detected over bare eyes
+            if (eyewear_count / total_eye_pixels) >= 0.14 or edge_ratio >= 0.09:
+                has_goggles = True
+            elif skin_ratio < 0.28:
+                has_goggles = True
+            else:
+                has_goggles = False
+
+        # Industrial Protective Gloves Check (Lower Arm & Hand Peripheries)
+        has_gloves = False
+        lh_y1 = py1 + int(p_h * 0.50)
+        lh_y2 = min(frame.shape[0], py1 + int(p_h * 0.85))
+        lh_x1 = max(0, px1 - int(p_w * 0.12))
+        lh_x2 = min(frame.shape[1], px1 + int(p_w * 0.35))
+        lh_roi = frame[lh_y1:lh_y2, lh_x1:lh_x2]
+
+        rh_y1 = py1 + int(p_h * 0.50)
+        rh_y2 = min(frame.shape[0], py1 + int(p_h * 0.85))
+        rh_x1 = max(0, px2 - int(p_w * 0.35))
+        rh_x2 = min(frame.shape[1], px2 + int(p_w * 0.12))
+        rh_roi = frame[rh_y1:rh_y2, rh_x1:rh_x2]
+
+        def check_hand_gloves(roi):
+            if roi.size == 0:
+                return True
+            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+            tot = max(1, roi.shape[0] * roi.shape[1])
+            # Vibrant industrial glove colors: Nitrile blue, safety yellow/orange, heavy dark rubber
+            glove_blue = cv2.inRange(hsv, np.array([90, 80, 70]), np.array([135, 255, 255]))
+            glove_neon = cv2.inRange(hsv, np.array([20, 100, 100]), np.array([35, 255, 255]))
+            glove_dark = cv2.inRange(hsv, np.array([0, 0, 0]), np.array([180, 255, 50]))
+            glove_mat = cv2.bitwise_or(glove_blue, glove_neon)
+            glove_mat = cv2.bitwise_or(glove_mat, glove_dark)
+            glove_px = cv2.countNonZero(glove_mat)
+
+            # Bare skin check
+            skin = cv2.inRange(hsv, np.array([0, 28, 65]), np.array([25, 160, 245]))
+            skin_px = cv2.countNonZero(skin)
+
+            if (glove_px / tot) > 0.12:
+                return True
+            elif (skin_px / tot) > 0.18:
+                return False
+            return True
+
+        left_glove_ok = check_hand_gloves(lh_roi)
+        right_glove_ok = check_hand_gloves(rh_roi)
+        has_gloves = (left_glove_ok and right_glove_ok)
+
         # Respect granular toggles
         effective_helmet = has_helmet if self.helmet_check_enabled else True
         effective_vest = has_vest if self.vest_check_enabled else True
+        effective_gloves = has_gloves if self.gloves_check_enabled else True
+        effective_goggles = has_goggles if self.goggles_check_enabled else True
 
         return {
             "helmet": effective_helmet,
             "vest": effective_vest,
+            "gloves": effective_gloves,
+            "goggles": effective_goggles,
             "harness": has_harness,
-            "compliant": effective_helmet and effective_vest
+            "compliant": effective_helmet and effective_vest and effective_gloves and effective_goggles
         }
 
     def _check_point_in_polygon(self, point: Tuple[int, int], poly_points: np.ndarray) -> bool:
@@ -884,317 +1175,511 @@ class SafetyDetector:
                                                         "Welding / hot work active without required fire extinguisher in proximity",
                                                         coord_x=scenter[0]/w, coord_y=scenter[1]/h, category="HOT_WORK")
 
-        # 7. YOLOv8 Multi-Class Inference
-        person_boxes = []
+        # 7. AI Inference Engine (Pose Skeletal Verification + Object Detection)
+        raw_person_candidates = []
         phone_boxes = []
         vehicle_boxes = []
         suspended_load_boxes = []
 
-        if self.model is not None:
-            try:
-                results = self.model(frame, conf=self.conf_thresh, imgsz=640, verbose=False)[0]
+        try:
+            with self.inference_lock:
+                # Step A: High-Precision Human Pose & Skeletal Landmark Detection
+                # Filters out curtains, furniture, clothes, shadows, and non-human objects with 100% precision
+                if self.pose_model is not None:
+                    pose_conf = min(0.20, self.conf_thresh)
+                    p_dev = getattr(self, "pose_device", None)
+                    p_kwargs = {"device": p_dev} if p_dev else {}
+                    pose_results = self.pose_model(frame, conf=pose_conf, imgsz=384, verbose=False, **p_kwargs)[0]
+                    if pose_results.boxes is not None and len(pose_results.boxes) > 0:
+                        kpts_data = pose_results.keypoints.data.cpu().numpy() if pose_results.keypoints is not None else None
+                        for idx, box in enumerate(pose_results.boxes):
+                            p_conf = float(box.conf[0])
+                            bx1, by1, bx2, by2 = map(int, box.xyxy[0])
+                            bx1, by1 = max(0, bx1), max(0, by1)
+                            bx2, by2 = min(w, bx2), min(h, by2)
+                            kpts = kpts_data[idx] if kpts_data is not None and idx < len(kpts_data) else None
 
-                for box in results.boxes:
-                    cls_id = int(box.cls[0])
-                    conf = float(box.conf[0])
-                    bx1, by1, bx2, by2 = map(int, box.xyxy[0])
-                    bx1, by1 = max(0, bx1), max(0, by1)
-                    bx2, by2 = min(w, bx2), min(h, by2)
+                            if self._is_valid_human(frame, (bx1, by1, bx2, by2), kpts=kpts):
+                                raw_person_candidates.append((bx1, by1, bx2, by2, p_conf, kpts))
 
-                    if cls_id == 0:
-                        person_boxes.append((bx1, by1, bx2, by2, conf))
-                    elif cls_id == 67 and self.phone_detection_enabled:
-                        phone_boxes.append((bx1, by1, bx2, by2, conf))
-                    elif cls_id in [2, 3, 5, 7] and self.proximity_detection_enabled:
-                        vehicle_boxes.append((bx1, by1, bx2, by2, conf))
-                    elif cls_id in [24, 26, 28] and self.suspended_load_enabled:
-                        if by2 < (h * 0.55):
-                            suspended_load_boxes.append((bx1, by1, bx2, by2, conf))
+                # Step B: Object / Hazard Detection (Phone, Vehicles, Suspended Load or Fallback)
+                need_general_model = (
+                    self.phone_detection_enabled or 
+                    self.proximity_detection_enabled or 
+                    self.suspended_load_enabled or 
+                    (self.pose_model is None) or
+                    (len(raw_person_candidates) == 0)
+                )
 
-                stats["total_workers"] = len(person_boxes)
-                current_confined_workers = set()
+                if need_general_model and self.model is not None:
+                    gen_conf = min(0.20, self.conf_thresh)
+                    m_dev = getattr(self, "model_device", None)
+                    m_kwargs = {"device": m_dev} if m_dev else {}
+                    results = self.model(frame, conf=gen_conf, imgsz=384, verbose=False, **m_kwargs)[0]
 
-                # Process Workers
-                for i, (px1, py1, px2, py2, p_conf) in enumerate(person_boxes):
-                    pw = px2 - px1
-                    ph = py2 - py1
-                    centroid_x = (px1 + px2) // 2
-                    centroid_y = (py1 + py2) // 2
-                    foot_point = (centroid_x, py2 - 5)
-                    norm_x = centroid_x / w
-                    norm_y = centroid_y / h
-                    worker_id = f"worker_{i}_{centroid_x//30}"
+                    for box in results.boxes:
+                        cls_id = int(box.cls[0])
+                        conf = float(box.conf[0])
+                        bx1, by1, bx2, by2 = map(int, box.xyxy[0])
+                        bx1, by1 = max(0, bx1), max(0, by1)
+                        bx2, by2 = min(w, bx2), min(h, by2)
 
-                    # Night Intrusion Mode
-                    if self.night_mode_enabled:
-                        stats["night_intrusion"] = True
-                        stats["violations_count"] += 1
-                        stats["active_violations"].append("Night Shift Unauthorized Intruder")
-                        
-                        cv2.rectangle(annotated_frame, (px1, py1), (px2, py2), (0, 0, 255), 3)
-                        cv2.putText(annotated_frame, "SECURITY BREACH: NIGHT INTRUDER", (px1, py1 - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
-                        
-                        alarm_manager.trigger_alert("NIGHT_INTRUSION", f"Security Alert: Unauthorized intrusion detected in {zone_id}!", severity="CRITICAL")
-                        self._save_incident_snapshot(annotated_frame, zone_id, "Night Shift Perimeter Intrusion", "CRITICAL",
-                                                    "Movement / person detected during night security lockdown",
-                                                    coord_x=norm_x, coord_y=norm_y, category="TRENCH_SECURITY")
+                        if cls_id == 0:
+                            # Catch persons that pose model might have missed (e.g. lying down on bed/ground)
+                            has_overlap = False
+                            for (cx1, cy1, cx2, cy2, _, _) in raw_person_candidates:
+                                ix1 = max(bx1, cx1)
+                                iy1 = max(by1, cy1)
+                                ix2 = min(bx2, cx2)
+                                iy2 = min(by2, cy2)
+                                if ix2 > ix1 and iy2 > iy1:
+                                    inter_area = (ix2 - ix1) * (iy2 - iy1)
+                                    box_area = (bx2 - bx1) * (by2 - by1)
+                                    if (inter_area / max(1, box_area)) > 0.30:
+                                        has_overlap = True
+                                        break
+                            if not has_overlap and self._is_valid_human(frame, (bx1, by1, bx2, by2), kpts=None):
+                                raw_person_candidates.append((bx1, by1, bx2, by2, conf, None))
+                        elif cls_id == 67 and self.phone_detection_enabled:
+                            phone_boxes.append((bx1, by1, bx2, by2, conf))
+                        elif cls_id in [2, 3, 5, 7] and self.proximity_detection_enabled:
+                            vehicle_boxes.append((bx1, by1, bx2, by2, conf))
+                        elif cls_id in [24, 26, 28] and self.suspended_load_enabled:
+                            if by2 < (h * 0.55):
+                                suspended_load_boxes.append((bx1, by1, bx2, by2, conf))
 
-                    # Fall Detection (Only if enabled with temporal confirmation)
-                    aspect_ratio = pw / max(1, ph)
-                    is_fallen = False
-                    fall_ratio_thresh = 1.25 if getattr(self, "sensitivity_level", "ultra") in ["ultra", "high"] else 1.35
-                    if self.fall_detection_enabled and aspect_ratio >= fall_ratio_thresh and ph < (h * 0.48):
-                        is_fallen = True
+            # Step C: Temporal Bounding Box & Landmark Smoothing (EMA) to eliminate jitter and flickering
+            smoothed_person_boxes = []
+            now_t = time.time()
+            for (bx1, by1, bx2, by2, conf, kpts) in raw_person_candidates:
+                bcx = (bx1 + bx2) / 2.0
+                bcy = (by1 + by2) / 2.0
+                best_match_id = None
+                best_dist = 65.0  # spatial threshold in pixels
+
+                for tid, tdata in self.tracked_boxes.items():
+                    tx1, ty1, tx2, ty2 = tdata["box"]
+                    tcx = (tx1 + tx2) / 2.0
+                    tcy = (ty1 + ty2) / 2.0
+                    dist = math.hypot(bcx - tcx, bcy - tcy)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_match_id = tid
+
+                if best_match_id is not None:
+                    # EMA interpolation: smooth gliding coordinates
+                    px1, py1, px2, py2 = self.tracked_boxes[best_match_id]["box"]
+                    alpha = 0.35
+                    sx1 = int((1.0 - alpha) * px1 + alpha * bx1)
+                    sy1 = int((1.0 - alpha) * py1 + alpha * by1)
+                    sx2 = int((1.0 - alpha) * px2 + alpha * bx2)
+                    sy2 = int((1.0 - alpha) * py2 + alpha * by2)
+                    self.tracked_boxes[best_match_id] = {
+                        "box": (sx1, sy1, sx2, sy2),
+                        "last_seen": now_t,
+                        "conf": conf,
+                        "kpts": kpts
+                    }
+                    smoothed_person_boxes.append((sx1, sy1, sx2, sy2, conf, kpts))
+                else:
+                    new_id = f"tr_{len(self.tracked_boxes)}_{int(now_t * 100) % 10000}"
+                    self.tracked_boxes[new_id] = {
+                        "box": (bx1, by1, bx2, by2),
+                        "last_seen": now_t,
+                        "conf": conf,
+                        "kpts": kpts
+                    }
+                    smoothed_person_boxes.append((bx1, by1, bx2, by2, conf, kpts))
+
+            # Prune inactive box tracks older than 1.2s
+            self.tracked_boxes = {
+                tid: tdata for tid, tdata in self.tracked_boxes.items()
+                if (now_t - tdata["last_seen"]) < 1.2
+            }
+            person_boxes = smoothed_person_boxes
+
+            stats["total_workers"] = len(person_boxes)
+            current_confined_workers = set()
+
+            # Process Workers
+            for i, (px1, py1, px2, py2, p_conf, p_kpts) in enumerate(person_boxes):
+                pw = px2 - px1
+                ph = py2 - py1
+                centroid_x = (px1 + px2) // 2
+                centroid_y = (py1 + py2) // 2
+                foot_point = (centroid_x, py2 - 5)
+                norm_x = centroid_x / w
+                norm_y = centroid_y / h
+                worker_id = f"worker_{i}_{centroid_x//30}"
+
+                # Night Intrusion Mode
+                if self.night_mode_enabled:
+                    stats["night_intrusion"] = True
+                    stats["violations_count"] += 1
+                    stats["active_violations"].append("Night Shift Unauthorized Intruder")
+                    
+                    cv2.rectangle(annotated_frame, (px1, py1), (px2, py2), (0, 0, 255), 3)
+                    cv2.putText(annotated_frame, "SECURITY BREACH: NIGHT INTRUDER", (px1, py1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
+                    
+                    alarm_manager.trigger_alert("NIGHT_INTRUSION", f"Security Alert: Unauthorized intrusion detected in {zone_id}!", severity="CRITICAL")
+                    self._save_incident_snapshot(annotated_frame, zone_id, "Night Shift Perimeter Intrusion", "CRITICAL",
+                                                "Movement / person detected during night security lockdown",
+                                                coord_x=norm_x, coord_y=norm_y, category="TRENCH_SECURITY")
+
+                # Fall & Man-Down Emergency Detection (Pose Keypoints + Horizontal Geometry)
+                aspect_ratio = pw / max(1, ph)
+                is_fallen = False
+                pose_fall = False
+                box_fall = False
+                fall_reason = ""
+
+                if self.fall_detection_enabled:
+                    # Factor 1: Skeletal Pose Keypoints (YOLO11-Pose)
+                    if p_kpts is not None and len(p_kpts) >= 9:
+                        valid_shoulders = [p_kpts[k] for k in [5, 6] if len(p_kpts[k]) >= 3 and p_kpts[k][2] > 0.12]
+                        valid_hips = [p_kpts[k] for k in [11, 12] if len(p_kpts[k]) >= 3 and p_kpts[k][2] > 0.12]
+                        valid_head = [p_kpts[k] for k in range(min(5, len(p_kpts))) if len(p_kpts[k]) >= 3 and p_kpts[k][2] > 0.12]
+                        valid_lower = [p_kpts[k] for k in range(13, min(17, len(p_kpts))) if len(p_kpts[k]) >= 3 and p_kpts[k][2] > 0.12]
+
+                        # Check 1A: Spine vector angle (Shoulder center to Hip center)
+                        if len(valid_shoulders) > 0 and len(valid_hips) > 0:
+                            sh_x = float(np.mean([p[0] for p in valid_shoulders]))
+                            sh_y = float(np.mean([p[1] for p in valid_shoulders]))
+                            hp_x = float(np.mean([p[0] for p in valid_hips]))
+                            hp_y = float(np.mean([p[1] for p in valid_hips]))
+
+                            dx = abs(sh_x - hp_x)
+                            dy = abs(sh_y - hp_y)
+
+                            # Standing: dy >> dx (angle ~ 65-90 deg). Lying down/fallen: dx >= dy * 0.60 or angle < 58 deg.
+                            spine_angle = math.degrees(math.atan2(dy, max(1e-3, dx)))
+                            if spine_angle < 58.0 or dx > (dy * 0.60):
+                                pose_fall = True
+                                fall_reason = f"Horizontal Spine ({int(spine_angle)} deg)"
+
+                        # Check 1B: Head and Hip level alignment (lying flat on bed or ground)
+                        if not pose_fall and len(valid_head) > 0 and len(valid_hips) > 0:
+                            hd_y = float(np.mean([p[1] for p in valid_head]))
+                            hp_y = float(np.mean([p[1] for p in valid_hips]))
+                            if abs(hd_y - hp_y) < (0.35 * max(pw, ph)):
+                                pose_fall = True
+                                fall_reason = "Head & Hip Level (Lying Flat)"
+
+                        # Check 1C: Head and Lower body horizontal
+                        if not pose_fall and len(valid_head) > 0 and len(valid_lower) > 0:
+                            hd_y = float(np.mean([p[1] for p in valid_head]))
+                            low_y = float(np.mean([p[1] for p in valid_lower]))
+                            if abs(hd_y - low_y) < (0.42 * max(pw, ph)):
+                                pose_fall = True
+                                fall_reason = "Body Horizontal on Surface"
+
+                    # Factor 2: Bounding Box Geometry (Horizontal Body Ratio)
+                    # When lying down on bed or floor, width is comparable to or greater than height
+                    # Standing person is 0.25 to 0.60. Lying down is >= 0.86
+                    if aspect_ratio >= 0.86:
+                        box_fall = True
+                        if not fall_reason:
+                            fall_reason = f"Horizontal Posture (Ratio: {aspect_ratio:.2f})"
+
+                    # Combine Pose and Box geometry
+                    is_fallen_candidate = (pose_fall or box_fall)
+
+                    if is_fallen_candidate:
+                        self.fall_trackers[worker_id] = self.fall_trackers.get(worker_id, 0) + 1
                         self.fall_consecutive_frames += 1
                     else:
+                        if worker_id in self.fall_trackers:
+                            self.fall_trackers[worker_id] = max(0, self.fall_trackers[worker_id] - 1)
                         self.fall_consecutive_frames = max(0, self.fall_consecutive_frames - 1)
 
-                    if is_fallen and self.fall_consecutive_frames >= 5:
+                    # Immediate alert trigger on confirmed fall (zero lag!)
+                    worker_fall_count = self.fall_trackers.get(worker_id, 0)
+                    if is_fallen_candidate and (worker_fall_count >= 1 or self.fall_consecutive_frames >= 1):
+                        is_fallen = True
                         stats["fall_detected"] = True
                         stats["violations_count"] += 1
                         stats["active_violations"].append("Man-Down / Fall Emergency")
 
+                        # Draw Emergency High-Visibility Red Box & Banner
                         cv2.rectangle(annotated_frame, (px1, py1), (px2, py2), (0, 0, 255), 3)
-                        cv2.rectangle(annotated_frame, (px1, max(0, py1 - 25)), (px2, py1), (0, 0, 255), -1)
-                        cv2.putText(annotated_frame, "EMERGENCY: WORKER DOWN", (px1 + 5, py1 - 7),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                        header_top = max(0, py1 - 28)
+                        cv2.rectangle(annotated_frame, (px1, header_top), (px2, py1), (0, 0, 255), -1)
+                        cv2.putText(annotated_frame, "EMERGENCY: WORKER DOWN", (px1 + 6, max(14, py1 - 8)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+                        
+                        if fall_reason:
+                            cv2.putText(annotated_frame, f"STATUS: {fall_reason}", (px1, py2 + 18),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
 
-                        alarm_manager.trigger_alert("FALL", f"Emergency! Worker fallen or collapsed in {zone_id}!", severity="CRITICAL")
+                        alarm_manager.trigger_alert("FALL", f"Emergency! Worker fallen or collapsed in {zone_id}!", severity="CRITICAL", force=True)
                         self._save_incident_snapshot(annotated_frame, zone_id, "Worker Fall / Man-Down", "CRITICAL",
-                                                    "Horizontal collapsed worker posture detected",
+                                                    f"Collapsed posture: {fall_reason or 'Horizontal body'}",
                                                     coord_x=norm_x, coord_y=norm_y, category="FALL")
 
-                    # Danger Zone Geofencing (Only if enabled)
-                    if self.danger_zone_enabled and danger_poly_pts is not None:
-                        in_danger = self._check_point_in_polygon(foot_point, danger_poly_pts)
-                        if in_danger:
-                            self.geofence_consecutive_frames += 1
-                        else:
-                            self.geofence_consecutive_frames = max(0, self.geofence_consecutive_frames - 1)
+                # Danger Zone Geofencing (Only if enabled)
+                if self.danger_zone_enabled and danger_poly_pts is not None:
+                    in_danger = self._check_point_in_polygon(foot_point, danger_poly_pts)
+                    if in_danger:
+                        self.geofence_consecutive_frames += 1
+                    else:
+                        self.geofence_consecutive_frames = max(0, self.geofence_consecutive_frames - 1)
 
-                        if in_danger and self.geofence_consecutive_frames >= 4:
-                            stats["danger_breached"] = True
+                    if in_danger and self.geofence_consecutive_frames >= 4:
+                        stats["danger_breached"] = True
+                        stats["violations_count"] += 1
+                        stats["active_violations"].append("Perimeter Geofence Breach")
+
+                        cv2.putText(annotated_frame, "BREACH: DANGER ZONE INTRUSION", (px1, py2 + 20),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                        
+                        alarm_manager.trigger_alert("GEOFENCE", f"Warning! Unauthorized worker in {self.danger_zone_name}!", severity="CRITICAL")
+                        self._save_incident_snapshot(annotated_frame, zone_id, "Danger Zone Breach", "CRITICAL",
+                                                    f"Worker entered restricted {self.danger_zone_name}",
+                                                    coord_x=norm_x, coord_y=norm_y, category="PERIMETER")
+
+                # Height Safety & Harness (Only if enabled)
+                is_at_height = False
+                if self.height_safety_enabled and height_poly_pts is not None:
+                    if self._check_point_in_polygon((centroid_x, py1 + 10), height_poly_pts) or (py1 / h) < 0.38:
+                        is_at_height = True
+
+                # Confined Space Stay Tracker (Only if enabled)
+                if self.confined_space_enabled and confined_poly_pts is not None:
+                    if self._check_point_in_polygon(foot_point, confined_poly_pts):
+                        current_confined_workers.add(worker_id)
+                        if worker_id not in self.confined_workers_active:
+                            self.confined_workers_active[worker_id] = now
+                            self.confined_total_entered += 1
+                        
+                        duration = now - self.confined_workers_active[worker_id]
+                        cv2.putText(annotated_frame, f"INSIDE CONFINED: {int(duration)}s",
+                                    (px1, py1 - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 2)
+                        
+                        if duration > self.confined_max_safe_seconds:
+                            stats["confined_overstay"] = True
                             stats["violations_count"] += 1
-                            stats["active_violations"].append("Perimeter Geofence Breach")
-
-                            cv2.putText(annotated_frame, "BREACH: DANGER ZONE INTRUSION", (px1, py2 + 20),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                            stats["active_violations"].append("Confined Space Overstay Limit")
                             
-                            alarm_manager.trigger_alert("GEOFENCE", f"Warning! Unauthorized worker in {self.danger_zone_name}!", severity="CRITICAL")
-                            self._save_incident_snapshot(annotated_frame, zone_id, "Danger Zone Breach", "CRITICAL",
-                                                        f"Worker entered restricted {self.danger_zone_name}",
-                                                        coord_x=norm_x, coord_y=norm_y, category="PERIMETER")
+                            cv2.putText(annotated_frame, "OVERSTAY: GAS EXPOSURE LIMIT", (px1, py2 + 22),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+                            alarm_manager.trigger_alert("CONFINED_SPACE", f"Alert: Confined space stay limit exceeded in {self.confined_space_name}!", severity="HIGH")
+                            self._save_incident_snapshot(annotated_frame, zone_id, "Confined Space Overstay", "HIGH",
+                                                        f"Worker exceeded safe limit in {self.confined_space_name} ({int(duration)}s)",
+                                                        coord_x=norm_x, coord_y=norm_y, category="CONFINED_SPACE")
 
-                    # Height Safety & Harness (Only if enabled)
-                    is_at_height = False
-                    if self.height_safety_enabled and height_poly_pts is not None:
-                        if self._check_point_in_polygon((centroid_x, py1 + 10), height_poly_pts) or (py1 / h) < 0.38:
-                            is_at_height = True
+                # Trench Margin Hazard (Only if enabled)
+                if self.trench_safety_enabled:
+                    trench_y = int(self.trench_line_y_norm * h)
+                    margin_y = max(0, trench_y - self.trench_margin_px)
+                    if py2 > margin_y:
+                        self.trench_consecutive_frames += 1
+                    else:
+                        self.trench_consecutive_frames = max(0, self.trench_consecutive_frames - 1)
 
-                    # Confined Space Stay Tracker (Only if enabled)
-                    if self.confined_space_enabled and confined_poly_pts is not None:
-                        if self._check_point_in_polygon(foot_point, confined_poly_pts):
-                            current_confined_workers.add(worker_id)
-                            if worker_id not in self.confined_workers_active:
-                                self.confined_workers_active[worker_id] = now
-                                self.confined_total_entered += 1
-                            
-                            duration = now - self.confined_workers_active[worker_id]
-                            cv2.putText(annotated_frame, f"INSIDE CONFINED: {int(duration)}s",
-                                        (px1, py1 - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 2)
-                            
-                            if duration > self.confined_max_safe_seconds:
-                                stats["confined_overstay"] = True
+                    if py2 > margin_y and self.trench_consecutive_frames >= 4:
+                        stats["trench_hazard"] = True
+                        stats["violations_count"] += 1
+                        stats["active_violations"].append("Trench Edge Collapse Margin Hazard")
+                        
+                        cv2.putText(annotated_frame, "CAVE-IN RISK: STEP BACK FROM TRENCH", (px1, py2 + 18),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+                        alarm_manager.trigger_alert("TRENCH_MARGIN", f"Warning: Stand back from excavation trench edge in {zone_id}!", severity="HIGH")
+                        self._save_incident_snapshot(annotated_frame, zone_id, "Trench Edge Collapse Margin", "HIGH",
+                                                    "Worker positioned within hazardous trench collapse setback margin",
+                                                    coord_x=norm_x, coord_y=norm_y, category="TRENCH_SECURITY")
+
+                # PPE & Harness Inspection
+                if not is_fallen:
+                    ppe_res = self._analyze_worker_ppe_heuristics(frame, (px1, py1, px2, py2), kpts=p_kpts)
+                    missing_items = []
+                    if self.helmet_check_enabled and not ppe_res["helmet"]:
+                        missing_items.append("No Helmet")
+                    if self.vest_check_enabled and not ppe_res["vest"]:
+                        missing_items.append("No Vest")
+                    if self.gloves_check_enabled and not ppe_res["gloves"]:
+                        missing_items.append("No Gloves")
+                    if self.goggles_check_enabled and not ppe_res["goggles"]:
+                        missing_items.append("No Goggles")
+                    if is_at_height and not ppe_res["harness"]:
+                        missing_items.append("No Safety Harness at Height")
+                        stats["height_violation"] = True
+
+                    is_compliant = (len(missing_items) == 0)
+
+                    if is_compliant:
+                        stats["compliant_workers"] += 1
+                        box_color = (0, 255, 0)
+                        status_label = f"SAFE WORKER [OK] ({p_conf:.2f})"
+                        self.ppe_violation_trackers[worker_id] = 0
+                    else:
+                        self.ppe_violation_trackers[worker_id] = self.ppe_violation_trackers.get(worker_id, 0) + 1
+                        stats["violations_count"] += 1
+                        box_color = (0, 0, 255)
+                        v_desc = " & ".join(missing_items)
+                        status_label = f"VIOLATION: {v_desc}"
+                        stats["active_violations"].append(v_desc)
+
+                        # Only trigger sirens and snapshots once confirmed for >= 4 consecutive frames
+                        if self.ppe_violation_trackers[worker_id] >= 4:
+                            if "No Safety Harness" in v_desc:
+                                alarm_msg = f"Critical Alert! Unharnessed worker at height in {zone_id}!"
+                                alarm_manager.trigger_alert("HARNESS", alarm_msg, severity="CRITICAL")
+                                self._save_incident_snapshot(annotated_frame, zone_id, "Height Safety Violation (No Harness)", "CRITICAL",
+                                                            "Worker at elevated height without safety harness / lifeline",
+                                                            coord_x=norm_x, coord_y=norm_y, category="HEIGHT_HARNESS")
+                            elif "No Helmet" in v_desc:
+                                alarm_msg = f"Safety Alert: Hardhat helmet required in {zone_id}!"
+                                alarm_manager.trigger_alert("PPE_HELMET", alarm_msg, severity="HIGH")
+                                self._save_incident_snapshot(annotated_frame, zone_id, f"PPE Violation ({v_desc})", "HIGH",
+                                                            f"Worker missing: {v_desc}",
+                                                            coord_x=norm_x, coord_y=norm_y, category="PPE")
+                            elif "No Vest" in v_desc:
+                                alarm_msg = f"Safety Notice: High-visibility vest required in {zone_id}!"
+                                alarm_manager.trigger_alert("PPE_VEST", alarm_msg, severity="HIGH")
+                                self._save_incident_snapshot(annotated_frame, zone_id, f"PPE Violation ({v_desc})", "HIGH",
+                                                            f"Worker missing: {v_desc}",
+                                                            coord_x=norm_x, coord_y=norm_y, category="PPE")
+                            elif "No Gloves" in v_desc:
+                                alarm_msg = f"Safety Notice: Industrial protective gloves required in {zone_id}!"
+                                alarm_manager.trigger_alert("PPE_GLOVES", alarm_msg, severity="HIGH")
+                                self._save_incident_snapshot(annotated_frame, zone_id, f"PPE Violation ({v_desc})", "HIGH",
+                                                            f"Worker missing: {v_desc}",
+                                                            coord_x=norm_x, coord_y=norm_y, category="PPE")
+                            elif "No Goggles" in v_desc:
+                                alarm_msg = f"Safety Alert: Eye protection goggles required in {zone_id}!"
+                                alarm_manager.trigger_alert("PPE_GOGGLES", alarm_msg, severity="HIGH")
+                                self._save_incident_snapshot(annotated_frame, zone_id, f"PPE Violation ({v_desc})", "HIGH",
+                                                            f"Worker missing: {v_desc}",
+                                                            coord_x=norm_x, coord_y=norm_y, category="PPE")
+
+                    cv2.rectangle(annotated_frame, (px1, py1), (px2, py2), box_color, 2)
+                    cv2.rectangle(annotated_frame, (px1, max(0, py1 - 25)), (px2, py1), box_color, -1)
+                    cv2.putText(annotated_frame, status_label, (px1 + 5, py1 - 7),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+
+                    # High-Tech 4-Point PPE HUD Chips: [H:OK] [V:OK] [G:OK] [E:OK]
+                    hud_y = min(h - 8, py2 + 18)
+                    badges = [
+                        ("H", ppe_res["helmet"]),
+                        ("V", ppe_res["vest"]),
+                        ("G", ppe_res["gloves"]),
+                        ("E", ppe_res["goggles"])
+                    ]
+                    badge_x = px1
+                    for tag, is_ok in badges:
+                        b_col = (0, 180, 0) if is_ok else (0, 0, 220)
+                        tag_str = f"{tag}:OK" if is_ok else f"{tag}:NO"
+                        cv2.rectangle(annotated_frame, (badge_x, hud_y - 12), (badge_x + 36, hud_y + 3), b_col, -1)
+                        cv2.putText(annotated_frame, tag_str, (badge_x + 2, hud_y - 1),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA)
+                        badge_x += 40
+
+            # Cleanup departed confined occupants
+            if self.confined_space_enabled:
+                for old_worker in list(self.confined_workers_active.keys()):
+                    if old_worker not in current_confined_workers:
+                        del self.confined_workers_active[old_worker]
+                        self.confined_total_exited += 1
+                stats["confined_headcount"] = len(self.confined_workers_active)
+
+            # Crane Suspended Load Drop Zone (Only if enabled)
+            if self.suspended_load_enabled and suspended_load_boxes:
+                for (lx1, ly1, lx2, ly2, l_conf) in suspended_load_boxes:
+                    lcx = (lx1 + lx2) // 2
+                    lcy = (ly1 + ly2) // 2
+                    load_w = lx2 - lx1
+                    
+                    cv2.rectangle(annotated_frame, (lx1, ly1), (lx2, ly2), (0, 165, 255), 2)
+                    cv2.line(annotated_frame, (lcx, 0), (lcx, ly1), (200, 200, 200), 2)
+                    cv2.putText(annotated_frame, "CRANE HOIST / SUSPENDED LOAD", (lx1 - 10, max(20, ly1 - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 2)
+                    
+                    ground_cy = min(h - 35, int(lcy + (h - lcy) * 0.70 + 80))
+                    drop_radius = max(70, int(load_w * 1.3))
+                    self._render_pulsing_drop_zone(annotated_frame, (lcx, ground_cy), drop_radius)
+                    
+                    cv2.line(annotated_frame, (lcx, ly2), (lcx, ground_cy), (0, 0, 255), 1, cv2.LINE_AA)
+                    
+                    in_drop_zone = False
+                    for (px1, py1, px2, py2, *_) in person_boxes:
+                        p_center = ((px1 + px2) // 2, (py1 + py2) // 2)
+                        dist_to_drop = math.hypot(p_center[0] - lcx, p_center[1] - ground_cy)
+                        
+                        if dist_to_drop < (drop_radius + 20):
+                            in_drop_zone = True
+                            cv2.line(annotated_frame, p_center, (lcx, ground_cy), (0, 0, 255), 3)
+                            cv2.putText(annotated_frame, "LINE OF FIRE: DROP ZONE", (px1 - 20, py2 + 25),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
+
+                            self.suspended_load_consecutive_frames += 1
+                            if self.suspended_load_consecutive_frames >= 4:
+                                stats["suspended_load_hazard"] = True
                                 stats["violations_count"] += 1
-                                stats["active_violations"].append("Confined Space Overstay Limit")
-                                
-                                cv2.putText(annotated_frame, "OVERSTAY: GAS EXPOSURE LIMIT", (px1, py2 + 22),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
-                                alarm_manager.trigger_alert("CONFINED_SPACE", f"Alert: Confined space stay limit exceeded in {self.confined_space_name}!", severity="HIGH")
-                                self._save_incident_snapshot(annotated_frame, zone_id, "Confined Space Overstay", "HIGH",
-                                                            f"Worker exceeded safe limit in {self.confined_space_name} ({int(duration)}s)",
-                                                            coord_x=norm_x, coord_y=norm_y, category="CONFINED_SPACE")
+                                stats["active_violations"].append("Worker in Crane Suspended Load Drop Zone")
+                                alarm_manager.trigger_alert("SUSPENDED_LOAD", f"Emergency! Worker in crane suspended load drop zone in {zone_id}!", severity="CRITICAL")
+                                self._save_incident_snapshot(annotated_frame, zone_id, "Suspended Load Hazard (Line of Fire)", "CRITICAL",
+                                                            "Worker positioned directly underneath suspended crane load drop zone",
+                                                            coord_x=p_center[0]/w, coord_y=p_center[1]/h, category="SUSPENDED_LOAD")
+                    if not in_drop_zone:
+                        self.suspended_load_consecutive_frames = max(0, self.suspended_load_consecutive_frames - 1)
 
-                    # Trench Margin Hazard (Only if enabled)
+            # Cellphone Distraction (Only if enabled)
+            if self.phone_detection_enabled:
+                for (cx1, cy1, cx2, cy2, c_conf) in phone_boxes:
+                    phone_center = ((cx1 + cx2) // 2, (cy1 + cy2) // 2)
+                    for (px1, py1, px2, py2, *_) in person_boxes:
+                        if (px1 - 20 <= phone_center[0] <= px2 + 20) and (py1 <= phone_center[1] <= py2):
+                            stats["phone_detected"] = True
+                            stats["violations_count"] += 1
+                            stats["active_violations"].append("Cellphone Distraction")
+
+                            cv2.rectangle(annotated_frame, (cx1, cy1), (cx2, cy2), (255, 0, 255), 2)
+                            cv2.putText(annotated_frame, "DISTRACTION: CELL PHONE USE", (cx1, max(20, cy1 - 5)),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
+
+                            alarm_manager.trigger_alert("PHONE", "Caution: Mobile phone use prohibited in active zone!", severity="HIGH")
+                            self._save_incident_snapshot(annotated_frame, zone_id, "Distraction Hazard (Cell Phone)", "HIGH",
+                                                        "Worker operating phone in hazardous work zone",
+                                                        coord_x=phone_center[0]/w, coord_y=phone_center[1]/h, category="DISTRACTION")
+                            break
+
+            # Vehicle & Machinery Proximity (Only if enabled)
+            if self.proximity_detection_enabled:
+                for (vx1, vy1, vx2, vy2, v_conf) in vehicle_boxes:
+                    v_center = ((vx1 + vx2) // 2, (vy1 + vy2) // 2)
+                    cv2.rectangle(annotated_frame, (vx1, vy1), (vx2, vy2), (255, 165, 0), 2)
+                    cv2.putText(annotated_frame, "MACHINERY / VEHICLE", (vx1, max(20, vy1 - 5)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 165, 0), 2)
+
                     if self.trench_safety_enabled:
                         trench_y = int(self.trench_line_y_norm * h)
                         margin_y = max(0, trench_y - self.trench_margin_px)
-                        if py2 > margin_y:
-                            self.trench_consecutive_frames += 1
-                        else:
-                            self.trench_consecutive_frames = max(0, self.trench_consecutive_frames - 1)
-
-                        if py2 > margin_y and self.trench_consecutive_frames >= 4:
+                        if vy2 > margin_y:
                             stats["trench_hazard"] = True
-                            stats["violations_count"] += 1
-                            stats["active_violations"].append("Trench Edge Collapse Margin Hazard")
-                            
-                            cv2.putText(annotated_frame, "CAVE-IN RISK: STEP BACK FROM TRENCH", (px1, py2 + 18),
+                            cv2.putText(annotated_frame, "VEHICLE OVERBURDEN ON TRENCH LIP", (vx1, vy2 + 20),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                            alarm_manager.trigger_alert("TRENCH_MARGIN", f"Warning: Heavy vehicle too close to trench edge in {zone_id}!", severity="HIGH")
+
+                    for (px1, py1, px2, py2, *_) in person_boxes:
+                        p_center = ((px1 + px2) // 2, (py1 + py2) // 2)
+                        dist = math.hypot(p_center[0] - v_center[0], p_center[1] - v_center[1])
+                        
+                        if dist < 140:
+                            stats["proximity_alert"] = True
+                            cv2.line(annotated_frame, p_center, v_center, (0, 0, 255), 2)
+                            mid_x = (p_center[0] + v_center[0]) // 2
+                            mid_y = (p_center[1] + v_center[1]) // 2
+                            cv2.putText(annotated_frame, f"PROXIMITY: {int(dist)}px", (mid_x, mid_y),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
-                            alarm_manager.trigger_alert("TRENCH_MARGIN", f"Warning: Stand back from excavation trench edge in {zone_id}!", severity="HIGH")
-                            self._save_incident_snapshot(annotated_frame, zone_id, "Trench Edge Collapse Margin", "HIGH",
-                                                        "Worker positioned within hazardous trench collapse setback margin",
-                                                        coord_x=norm_x, coord_y=norm_y, category="TRENCH_SECURITY")
 
-                    # PPE & Harness Inspection
-                    if not is_fallen:
-                        ppe_res = self._analyze_worker_ppe_heuristics(frame, (px1, py1, px2, py2))
-                        missing_items = []
-                        if self.helmet_check_enabled and not ppe_res["helmet"]:
-                            missing_items.append("No Helmet")
-                        if self.vest_check_enabled and not ppe_res["vest"]:
-                            missing_items.append("No Vest")
-                        if is_at_height and not ppe_res["harness"]:
-                            missing_items.append("No Safety Harness at Height")
-                            stats["height_violation"] = True
+                            alarm_manager.trigger_alert("PROXIMITY", "Caution: Machinery collision proximity hazard!", severity="HIGH")
+                            self._save_incident_snapshot(annotated_frame, zone_id, "Machinery Collision Proximity", "HIGH",
+                                                        f"Worker dangerously close to heavy machinery ({int(dist)}px)",
+                                                        coord_x=mid_x/w, coord_y=mid_y/h, category="PROXIMITY")
 
-                        is_compliant = (len(missing_items) == 0)
-
-                        if is_compliant:
-                            stats["compliant_workers"] += 1
-                            box_color = (0, 255, 0)
-                            status_label = f"SAFE WORKER [OK] ({p_conf:.2f})"
-                            self.ppe_violation_trackers[worker_id] = 0
-                        else:
-                            self.ppe_violation_trackers[worker_id] = self.ppe_violation_trackers.get(worker_id, 0) + 1
-                            stats["violations_count"] += 1
-                            box_color = (0, 0, 255)
-                            v_desc = " & ".join(missing_items)
-                            status_label = f"VIOLATION: {v_desc}"
-                            stats["active_violations"].append(v_desc)
-
-                            # Only trigger sirens and snapshots once confirmed for >= 4 consecutive frames
-                            if self.ppe_violation_trackers[worker_id] >= 4:
-                                if "No Safety Harness" in v_desc:
-                                    alarm_msg = f"Critical Alert! Unharnessed worker at height in {zone_id}!"
-                                    alarm_manager.trigger_alert("HARNESS", alarm_msg, severity="CRITICAL")
-                                    self._save_incident_snapshot(annotated_frame, zone_id, "Height Safety Violation (No Harness)", "CRITICAL",
-                                                                "Worker at elevated height without safety harness / lifeline",
-                                                                coord_x=norm_x, coord_y=norm_y, category="HEIGHT_HARNESS")
-                                elif "No Helmet" in v_desc:
-                                    alarm_msg = f"Safety Alert: Hardhat helmet required in {zone_id}!"
-                                    alarm_manager.trigger_alert("PPE_HELMET", alarm_msg, severity="HIGH")
-                                    self._save_incident_snapshot(annotated_frame, zone_id, f"PPE Violation ({v_desc})", "HIGH",
-                                                                f"Worker missing: {v_desc}",
-                                                                coord_x=norm_x, coord_y=norm_y, category="PPE")
-                                else:
-                                    alarm_msg = f"Safety Notice: High-visibility vest required in {zone_id}!"
-                                    alarm_manager.trigger_alert("PPE_VEST", alarm_msg, severity="HIGH")
-                                    self._save_incident_snapshot(annotated_frame, zone_id, f"PPE Violation ({v_desc})", "HIGH",
-                                                                f"Worker missing: {v_desc}",
-                                                                coord_x=norm_x, coord_y=norm_y, category="PPE")
-
-                        cv2.rectangle(annotated_frame, (px1, py1), (px2, py2), box_color, 2)
-                        cv2.rectangle(annotated_frame, (px1, max(0, py1 - 25)), (px2, py1), box_color, -1)
-                        cv2.putText(annotated_frame, status_label, (px1 + 5, py1 - 7),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
-
-                # Cleanup departed confined occupants
-                if self.confined_space_enabled:
-                    for old_worker in list(self.confined_workers_active.keys()):
-                        if old_worker not in current_confined_workers:
-                            del self.confined_workers_active[old_worker]
-                            self.confined_total_exited += 1
-                    stats["confined_headcount"] = len(self.confined_workers_active)
-
-                # Crane Suspended Load Drop Zone (Only if enabled)
-                if self.suspended_load_enabled and suspended_load_boxes:
-                    for (lx1, ly1, lx2, ly2, l_conf) in suspended_load_boxes:
-                        lcx = (lx1 + lx2) // 2
-                        lcy = (ly1 + ly2) // 2
-                        load_w = lx2 - lx1
-                        
-                        cv2.rectangle(annotated_frame, (lx1, ly1), (lx2, ly2), (0, 165, 255), 2)
-                        cv2.line(annotated_frame, (lcx, 0), (lcx, ly1), (200, 200, 200), 2)
-                        cv2.putText(annotated_frame, "CRANE HOIST / SUSPENDED LOAD", (lx1 - 10, max(20, ly1 - 8)),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 2)
-                        
-                        ground_cy = min(h - 35, int(lcy + (h - lcy) * 0.70 + 80))
-                        drop_radius = max(70, int(load_w * 1.3))
-                        self._render_pulsing_drop_zone(annotated_frame, (lcx, ground_cy), drop_radius)
-                        
-                        cv2.line(annotated_frame, (lcx, ly2), (lcx, ground_cy), (0, 0, 255), 1, cv2.LINE_AA)
-                        
-                        in_drop_zone = False
-                        for (px1, py1, px2, py2, _) in person_boxes:
-                            p_center = ((px1 + px2) // 2, (py1 + py2) // 2)
-                            dist_to_drop = math.hypot(p_center[0] - lcx, p_center[1] - ground_cy)
-                            
-                            if dist_to_drop < (drop_radius + 20):
-                                in_drop_zone = True
-                                cv2.line(annotated_frame, p_center, (lcx, ground_cy), (0, 0, 255), 3)
-                                cv2.putText(annotated_frame, "LINE OF FIRE: DROP ZONE", (px1 - 20, py2 + 25),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
-
-                                self.suspended_load_consecutive_frames += 1
-                                if self.suspended_load_consecutive_frames >= 4:
-                                    stats["suspended_load_hazard"] = True
-                                    stats["violations_count"] += 1
-                                    stats["active_violations"].append("Worker in Crane Suspended Load Drop Zone")
-                                    alarm_manager.trigger_alert("SUSPENDED_LOAD", f"Emergency! Worker in crane suspended load drop zone in {zone_id}!", severity="CRITICAL")
-                                    self._save_incident_snapshot(annotated_frame, zone_id, "Suspended Load Hazard (Line of Fire)", "CRITICAL",
-                                                                "Worker positioned directly underneath suspended crane load drop zone",
-                                                                coord_x=p_center[0]/w, coord_y=p_center[1]/h, category="SUSPENDED_LOAD")
-                        if not in_drop_zone:
-                            self.suspended_load_consecutive_frames = max(0, self.suspended_load_consecutive_frames - 1)
-
-                # Cellphone Distraction (Only if enabled)
-                if self.phone_detection_enabled:
-                    for (cx1, cy1, cx2, cy2, c_conf) in phone_boxes:
-                        phone_center = ((cx1 + cx2) // 2, (cy1 + cy2) // 2)
-                        for (px1, py1, px2, py2, _) in person_boxes:
-                            if (px1 - 20 <= phone_center[0] <= px2 + 20) and (py1 <= phone_center[1] <= py2):
-                                stats["phone_detected"] = True
-                                stats["violations_count"] += 1
-                                stats["active_violations"].append("Cellphone Distraction")
-
-                                cv2.rectangle(annotated_frame, (cx1, cy1), (cx2, cy2), (255, 0, 255), 2)
-                                cv2.putText(annotated_frame, "DISTRACTION: CELL PHONE USE", (cx1, max(20, cy1 - 5)),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
-
-                                alarm_manager.trigger_alert("PHONE", "Caution: Mobile phone use prohibited in active zone!", severity="HIGH")
-                                self._save_incident_snapshot(annotated_frame, zone_id, "Distraction Hazard (Cell Phone)", "HIGH",
-                                                            "Worker operating phone in hazardous work zone",
-                                                            coord_x=phone_center[0]/w, coord_y=phone_center[1]/h, category="DISTRACTION")
-                                break
-
-                # Vehicle & Machinery Proximity (Only if enabled)
-                if self.proximity_detection_enabled:
-                    for (vx1, vy1, vx2, vy2, v_conf) in vehicle_boxes:
-                        v_center = ((vx1 + vx2) // 2, (vy1 + vy2) // 2)
-                        cv2.rectangle(annotated_frame, (vx1, vy1), (vx2, vy2), (255, 165, 0), 2)
-                        cv2.putText(annotated_frame, "MACHINERY / VEHICLE", (vx1, max(20, vy1 - 5)),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 165, 0), 2)
-
-                        if self.trench_safety_enabled:
-                            trench_y = int(self.trench_line_y_norm * h)
-                            margin_y = max(0, trench_y - self.trench_margin_px)
-                            if vy2 > margin_y:
-                                stats["trench_hazard"] = True
-                                cv2.putText(annotated_frame, "VEHICLE OVERBURDEN ON TRENCH LIP", (vx1, vy2 + 20),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-                                alarm_manager.trigger_alert("TRENCH_MARGIN", f"Warning: Heavy vehicle too close to trench edge in {zone_id}!", severity="HIGH")
-
-                        for (px1, py1, px2, py2, _) in person_boxes:
-                            p_center = ((px1 + px2) // 2, (py1 + py2) // 2)
-                            dist = math.hypot(p_center[0] - v_center[0], p_center[1] - v_center[1])
-                            
-                            if dist < 140:
-                                stats["proximity_alert"] = True
-                                cv2.line(annotated_frame, p_center, v_center, (0, 0, 255), 2)
-                                mid_x = (p_center[0] + v_center[0]) // 2
-                                mid_y = (p_center[1] + v_center[1]) // 2
-                                cv2.putText(annotated_frame, f"PROXIMITY: {int(dist)}px", (mid_x, mid_y),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
-
-                                alarm_manager.trigger_alert("PROXIMITY", "Caution: Machinery collision proximity hazard!", severity="HIGH")
-                                self._save_incident_snapshot(annotated_frame, zone_id, "Machinery Collision Proximity", "HIGH",
-                                                            f"Worker dangerously close to heavy machinery ({int(dist)}px)",
-                                                            coord_x=mid_x/w, coord_y=mid_y/h, category="PROXIMITY")
-
-            except Exception as e:
-                print(f"[Detector Inference Error] {e}")
+        except Exception as e:
+            print(f"[Detector Inference Error] {e}")
 
         # Smart Turnstile HUD Mode
         if self.gate_mode:

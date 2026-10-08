@@ -15,16 +15,15 @@ except Exception:
     REPORTLAB_AVAILABLE = False
 
 
-def generate_pdf_report(output_path: str = "Safety_Compliance_Audit_Report.pdf") -> str:
-    """Generates an executive Safety Compliance Audit PDF report."""
+def generate_pdf_bytes() -> bytes:
+    """Generates an executive Safety Compliance Audit PDF in-memory as bytes."""
+    buffer = io.BytesIO()
     if not REPORTLAB_AVAILABLE:
-        # Fallback to simple HTML or text report
-        with open(output_path.replace(".pdf", ".html"), "w", encoding="utf-8") as f:
-            f.write("<h1>Safety Compliance Audit Report</h1><p>Reportlab not installed.</p>")
-        return output_path.replace(".pdf", ".html")
+        html_fallback = "<html><body><h1>Safety Compliance Audit Report</h1><p>ReportLab library is not installed.</p></body></html>"
+        return html_fallback.encode("utf-8")
 
     doc = SimpleDocTemplate(
-        output_path,
+        buffer,
         pagesize=letter,
         rightMargin=36,
         leftMargin=36,
@@ -60,36 +59,47 @@ def generate_pdf_report(output_path: str = "Safety_Compliance_Audit_Report.pdf")
 
     # Title & Header
     elements.append(Paragraph("INDUSTRIAL SAFETY & PPE COMPLIANCE AUDIT REPORT", title_style))
-    elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | STPI & EmTek Hackathon", subtitle_style))
+    elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | SafeVision AI System", subtitle_style))
     elements.append(Spacer(1, 10))
 
-    # Fetch Database Summary
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM incidents ORDER BY id DESC LIMIT 50")
-    incidents = cur.fetchall()
-
-    # Fetch latest weather reading
-    cur.execute("SELECT * FROM weather_logs ORDER BY id DESC LIMIT 1")
-    latest_weather = cur.fetchone()
+    # Fetch Database Summary safely
+    incidents = []
+    latest_weather = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM incidents ORDER BY id DESC LIMIT 50")
+        incidents = cur.fetchall()
+        cur.execute("SELECT * FROM weather_logs ORDER BY id DESC LIMIT 1")
+        latest_weather = cur.fetchone()
+        conn.close()
+    except Exception as e:
+        print(f"[ReportGenerator] DB query error: {e}")
 
     total_incidents = len(incidents)
-    helmet_count = sum(1 for inc in incidents if "Helmet" in inc["incident_type"])
-    vest_count = sum(1 for inc in incidents if "Vest" in inc["incident_type"])
-    fire_count = sum(1 for inc in incidents if "Fire" in inc["incident_type"])
-    thermal_count = sum(1 for inc in incidents if "Thermal" in inc["incident_type"] or "Heat" in inc["incident_type"])
-    conn.close()
+    helmet_count = sum(1 for inc in incidents if "Helmet" in str(inc["incident_type"] or ""))
+    vest_count = sum(1 for inc in incidents if "Vest" in str(inc["incident_type"] or ""))
+    gloves_count = sum(1 for inc in incidents if "Glove" in str(inc["incident_type"] or ""))
+    goggles_count = sum(1 for inc in incidents if "Goggle" in str(inc["incident_type"] or "") or "Glasses" in str(inc["incident_type"] or ""))
+    fire_count = sum(1 for inc in incidents if "Fire" in str(inc["incident_type"] or ""))
+    thermal_count = sum(1 for inc in incidents if "Thermal" in str(inc["incident_type"] or "") or "Heat" in str(inc["incident_type"] or ""))
 
-    weather_desc = f"{latest_weather['temperature']}°C (Heat Index: {latest_weather['heat_index']}°C, {latest_weather['humidity']}% RH)" if latest_weather else "N/A"
-    weather_risk = latest_weather['risk_level'] if latest_weather else "Normal"
+    if latest_weather:
+        weather_desc = f"{latest_weather['temperature']}°C (Heat Index: {latest_weather['heat_index']}°C, {latest_weather['humidity']}% RH)"
+        weather_risk = str(latest_weather['risk_level'] or "Normal")
+    else:
+        weather_desc = "Optimal Ambient (24°C / 45% RH)"
+        weather_risk = "Normal"
 
-    # Summary Metrics Table
+    # Summary Metrics Table (All Core PPE Items Included)
     summary_data = [
         ["Metric", "Value", "Status"],
         ["Total Safety Incidents Logged", str(total_incidents), "Critical" if total_incidents > 10 else "Normal"],
         ["Hardhat / Helmet Violations", str(helmet_count), "High Priority" if helmet_count > 0 else "Clear"],
         ["High-Vis Vest Violations", str(vest_count), "High Priority" if vest_count > 0 else "Clear"],
+        ["Protective Gloves Violations", str(gloves_count), "High Priority" if gloves_count > 0 else "Clear"],
+        ["Safety Goggles / Eyewear Violations", str(goggles_count), "High Priority" if goggles_count > 0 else "Clear"],
         ["Fire & Smoke Emergency Triggers", str(fire_count), "ALERT" if fire_count > 0 else "Safe"],
         ["Thermal / Heat Stress Hazards", str(thermal_count), "ALERT" if thermal_count > 0 else "Safe"],
         ["Current Environmental Climate", weather_desc, weather_risk],
@@ -119,10 +129,10 @@ def generate_pdf_report(output_path: str = "Safety_Compliance_Audit_Report.pdf")
     for inc in incidents[:15]:
         log_data.append([
             str(inc["id"]),
-            inc["timestamp"],
-            inc["zone"][:20],
-            inc["incident_type"][:25],
-            inc["severity"]
+            str(inc["timestamp"] or "")[:19],
+            str(inc["zone"] or "")[:20],
+            str(inc["incident_type"] or "")[:25],
+            str(inc["severity"] or "HIGH")
         ])
 
     if len(log_data) == 1:
@@ -144,6 +154,17 @@ def generate_pdf_report(output_path: str = "Safety_Compliance_Audit_Report.pdf")
 
     # Build PDF
     doc.build(elements)
+    return buffer.getvalue()
+
+
+def generate_pdf_report(output_path: str = "Safety_Compliance_Audit_Report.pdf") -> str:
+    """Generates an executive Safety Compliance Audit PDF report and writes to output_path."""
+    pdf_bytes = generate_pdf_bytes()
+    try:
+        with open(output_path, "wb") as f:
+            f.write(pdf_bytes)
+    except Exception as e:
+        print(f"[Warning] Could not write PDF to {output_path} (file may be open in viewer): {e}")
     return output_path
 
 

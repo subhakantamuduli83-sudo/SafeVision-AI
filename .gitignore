@@ -11,3 +11,5 @@ best.pt
 !static/images/features/*.jpg
 .vscode/
 .idea/
+.venv/
+venv/

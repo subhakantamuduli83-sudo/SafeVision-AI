@@ -1,6 +1,7 @@
 import cv2
 import threading
 import time
+import asyncio
 import os
 import json
 from fastapi import FastAPI, Request, Response, BackgroundTasks, Form, Body, UploadFile, File
@@ -11,11 +12,11 @@ import uvicorn
 
 from core.database import (
     init_db, get_recent_incidents, acknowledge_incident, get_incident_summary,
-    get_heatmap_data, get_safety_scorecard
+    get_heatmap_data, get_safety_scorecard, get_compliance_trend_data
 )
 from core.alarm import alarm_manager
 from core.detector import SafetyDetector
-from core.report_generator import generate_pdf_report, generate_csv_report
+from core.report_generator import generate_pdf_report, generate_pdf_bytes, generate_csv_report
 from core.weather import weather_manager
 from core.notifier import notifier, save_env_telegram
 from core.copilot import copilot
@@ -107,35 +108,47 @@ async def serve_dashboard(request: Request):
             html_content = f.read()
         return HTMLResponse(content=html_content)
 
-def generate_video_feed():
+async def generate_video_feed(request: Request):
     while True:
+        if await request.is_disconnected():
+            break
         frame_bytes = stream_manager.get_jpeg()
         if frame_bytes is not None:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        time.sleep(0.04) # ~25 FPS
+        await asyncio.sleep(0.02)
 
 @app.get("/video_feed")
-async def video_feed():
+async def video_feed(request: Request):
     return StreamingResponse(
-        generate_video_feed(),
+        generate_video_feed(request),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
-def generate_camera_feed(cam_id: str):
+async def generate_camera_feed(request: Request, cam_id: str):
     while True:
+        if await request.is_disconnected():
+            break
         frame_bytes = camera_manager.get_camera_jpeg(cam_id)
         if frame_bytes is not None:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        time.sleep(0.04) # ~25 FPS
+        await asyncio.sleep(0.025)
 
 @app.get("/api/stream/{cam_id}")
-async def stream_single_camera(cam_id: str):
+async def stream_single_camera(request: Request, cam_id: str):
     return StreamingResponse(
-        generate_camera_feed(cam_id),
+        generate_camera_feed(request, cam_id),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+@app.get("/api/snapshot/{cam_id}")
+async def camera_snapshot(cam_id: str):
+    """Returns a single JPEG frame and immediately closes connection (saving browser socket limits)."""
+    frame_bytes = camera_manager.get_camera_jpeg(cam_id)
+    if frame_bytes is not None:
+        return Response(content=frame_bytes, media_type="image/jpeg")
+    return Response(status_code=404)
 
 # ================= Zone & Multi-Camera Endpoints =================
 @app.get("/api/zones")
@@ -233,7 +246,8 @@ async def get_stats():
             "cooldown": det.snapshot_cooldown,
             "strictness": getattr(det, "ppe_strictness", "ultra")
         },
-        "feature_matrix": det.get_feature_matrix()
+        "feature_matrix": det.get_feature_matrix(),
+        "intel_mode": getattr(det, "intel_mode", "Intel AI Boost NPU + Arc GPU Dual-Engine")
     }
 
 # ================= AI Detection Sensitivity Endpoints =================
@@ -445,6 +459,11 @@ async def get_scorecard():
     card = get_safety_scorecard()
     return card
 
+@app.get("/api/analytics/compliance-trend")
+async def get_compliance_trend():
+    """Returns hourly compliance score trends and official AI model benchmark metrics (Precision, Recall, Latency)."""
+    return get_compliance_trend_data()
+
 @app.get("/api/weather/current")
 async def get_current_weather():
     """Returns real-time weather, calculated Heat Index, risk evaluation, and explainable reasons."""
@@ -544,6 +563,8 @@ async def upload_media(file: UploadFile = File(...), zone: str = Form("Inspectio
 FEATURE_SIREN_TESTS = {
     "helmet": ("PPE_HELMET", "Safety Alert: Hardhat helmet required in work zone!", "HIGH"),
     "vest": ("PPE_VEST", "Safety Notice: High-visibility vest required in work zone!", "HIGH"),
+    "gloves": ("PPE_GLOVES", "Safety Notice: Industrial protective gloves required in work zone!", "HIGH"),
+    "goggles": ("PPE_GOGGLES", "Safety Alert: Eye protection goggles required in work zone!", "HIGH"),
     "harness": ("HARNESS", "Critical Warning: Fall arrest safety harness mandatory at height!", "CRITICAL"),
     "fall": ("FALL", "Emergency! Worker fallen or collapsed in Zone 1!", "CRITICAL"),
     "crane": ("SUSPENDED_LOAD", "Danger! Stand clear of crane suspended load drop zone!", "CRITICAL"),
@@ -557,7 +578,14 @@ FEATURE_SIREN_TESTS = {
     "gate_fail": ("GATE_FAIL", "Access Denied: Please equip mandatory safety gear", "HIGH"),
     "phone": ("PHONE", "Notice: Mobile phone use prohibited in active machinery zone!", "HIGH"),
     "proximity": ("PROXIMITY", "Caution: Machinery collision proximity hazard!", "HIGH"),
+    "forklift": ("PROXIMITY", "Caution: Machinery collision proximity hazard!", "HIGH"),
     "heat": ("HEAT_HAZARD", "Caution: High heat index thermal warning in factory area!", "HIGH"),
+    "thermal": ("HEAT_HAZARD", "Caution: High heat index thermal warning in factory area!", "HIGH"),
+    "weather": ("HEAT_HAZARD", "Caution: High heat index thermal warning in factory area!", "HIGH"),
+    "general_test": ("MASTER_TEST", "Attention: SafeVision AI Industrial Master Speaker Siren Active.", "CRITICAL"),
+    "master": ("MASTER_TEST", "Attention: SafeVision AI Industrial Master Speaker Siren Active.", "CRITICAL"),
+    "speaker": ("MASTER_TEST", "Attention: SafeVision AI Industrial Master Speaker Siren Active.", "CRITICAL"),
+    "autopilot": ("AUTOPILOT", "SafeVision Auto-Pilot Armed: Autonomous Supervisor Mode Active.", "LOW"),
 }
 
 @app.post("/api/alarm/toggle")
@@ -565,7 +593,7 @@ async def toggle_alarm(mute: bool = Form(None), trigger_test: bool = Form(False)
     if mute is not None:
         alarm_manager.set_muted(mute)
     if trigger_test:
-        alarm_manager.trigger_alert("TEST", "Attention: Safety Siren Audio Test.", severity="HIGH", force=True)
+        alarm_manager.trigger_alert("MASTER_TEST", "Attention: SafeVision AI Safety Siren Audio Test.", severity="CRITICAL", force=True)
     return {"status": "success", "is_muted": alarm_manager.is_muted}
 
 @app.post("/api/alarm/test/{feature_key}")
@@ -575,13 +603,35 @@ async def test_feature_siren(feature_key: str):
         atype, msg, sev = FEATURE_SIREN_TESTS[fkey]
         alarm_manager.trigger_alert(atype, msg, severity=sev, force=True)
         return {"status": "success", "feature": fkey, "alert_type": atype, "message": msg, "severity": sev}
-    alarm_manager.trigger_alert("TEST", "Attention: SafeVision AI Safety Siren Audio Test.", severity="HIGH", force=True)
+    alarm_manager.trigger_alert("MASTER_TEST", "Attention: SafeVision AI Safety Siren Audio Test.", severity="CRITICAL", force=True)
     return {"status": "success", "feature": "general_test"}
 
 @app.get("/api/export/pdf")
 async def export_pdf():
-    pdf_path = generate_pdf_report("Safety_Compliance_Audit_Report.pdf")
-    return FileResponse(pdf_path, filename="Safety_Compliance_Audit_Report.pdf", media_type="application/pdf")
+    try:
+        pdf_bytes = generate_pdf_bytes()
+        # Cache local copy silently on disk
+        try:
+            with open("Safety_Compliance_Audit_Report.pdf", "wb") as f:
+                f.write(pdf_bytes)
+        except Exception:
+            pass
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="Safety_Compliance_Audit_Report.pdf"'}
+        )
+    except Exception as e:
+        if os.path.exists("Safety_Compliance_Audit_Report.pdf"):
+            return FileResponse("Safety_Compliance_Audit_Report.pdf", filename="Safety_Compliance_Audit_Report.pdf", media_type="application/pdf")
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+@app.get("/api/export/presentation")
+async def export_presentation():
+    pres_path = "SafeVision_AI_Presentation.pdf"
+    if os.path.exists(pres_path):
+        return FileResponse(pres_path, filename="SafeVision_AI_Presentation.pdf", media_type="application/pdf")
+    return JSONResponse({"status": "error", "message": "Presentation PDF not found"}, status_code=404)
 
 @app.get("/api/export/csv")
 async def export_csv():

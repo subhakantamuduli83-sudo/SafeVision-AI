@@ -21,12 +21,29 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
+def check_hardware_acceleration():
+    try:
+        import openvino as ov
+        core = ov.Core()
+        devices = core.available_devices
+        if "NPU" in devices and "GPU" in devices:
+            return f"Tri-Chip Balanced AI ACTIVE (Pose -> Intel AI Boost NPU | General AI -> Intel Arc GPU | Devices: {', '.join(devices)})"
+        elif "NPU" in devices:
+            return f"Intel AI Boost NPU ACTIVE (Devices: {', '.join(devices)})"
+        elif "GPU" in devices:
+            return f"Intel Arc GPU Acceleration ACTIVE (Devices: {', '.join(devices)})"
+        return f"OpenVINO Engine Ready ({', '.join(devices)})"
+    except Exception:
+        return "Standard CPU Mode"
+
 def print_banner(ip):
-    print("=" * 65)
+    hw_engine = check_hardware_acceleration()
+    print("=" * 70)
     print("   [SAFEVISION AI] SAFETY GEAR COMPLIANCE & HAZARD MONITORING")
     print("   STPI & EmTek BPUT Hackathon Project")
-    print("=" * 65)
-    print(f"\n[+] Laptop 1 Local Server: http://localhost:8000")
+    print("=" * 70)
+    print(f"\n[+] Hardware Engine: {hw_engine}")
+    print(f"[+] Laptop 1 Local Server: http://localhost:8000")
     print(f"[+] Laptop 2 (Control Room) Dashboard URL: http://{ip}:8000")
     print("\n[+] Mobile Camera (Wireless CCTV) Setup:")
     print("    1. Open 'IP Webcam' app on your phone.")
@@ -34,7 +51,7 @@ def print_banner(ip):
     print("    3. In the dashboard, enter the Mobile URL (e.g. http://192.168.x.x:8080/video)")
     print("\n[+] External Speaker:")
     print("    Connect to Laptop 1 audio jack or Bluetooth for voice & siren alerts.")
-    print("=" * 65)
+    print("=" * 70)
     print("Starting server now...\n")
 
 if __name__ == "__main__":

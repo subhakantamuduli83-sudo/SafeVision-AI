@@ -86,99 +86,143 @@ class SafetyAlarmManager:
         try:
             atype = str(alert_type).upper()
             
+            # 0. MASTER SPEAKER / GENERAL TEST: Industrial 4-tone ascending factory air horn blast
+            if "MASTER" in atype or "TEST" in atype:
+                winsound.Beep(350, 160)
+                winsound.Beep(520, 160)
+                winsound.Beep(740, 200)
+                winsound.Beep(1050, 320)
+
             # 1. FIRE / EVACUATION: Urgent high-low European emergency evacuation warble
-            if "FIRE" in atype:
+            elif "FIRE" in atype:
                 for _ in range(2):
-                    winsound.Beep(1300, 140)
-                    winsound.Beep(800, 140)
+                    winsound.Beep(1300, 160)
+                    winsound.Beep(750, 160)
             
-            # 2. WORKER FALL / MAN-DOWN: Descending medical distress alarm
+            # 2. WORKER FALL / MAN-DOWN: Medical code descending distress sequence
             elif "FALL" in atype or "COLLAPSE" in atype:
                 winsound.Beep(1100, 180)
                 winsound.Beep(850, 180)
-                winsound.Beep(650, 240)
+                winsound.Beep(580, 220)
+                winsound.Beep(330, 300)
             
-            # 3. HEIGHT SAFETY / HARNESS: Rapid high-frequency emergency chirp
+            # 3. HEIGHT SAFETY / HARNESS: Rapid high-frequency emergency whistle flutter
             elif "HARNESS" in atype or "HEIGHT" in atype:
-                for _ in range(3):
-                    winsound.Beep(1350, 100)
-                    time.sleep(0.03)
+                winsound.Beep(1650, 90)
+                time.sleep(0.04)
+                winsound.Beep(1760, 110)
+                time.sleep(0.04)
+                winsound.Beep(1900, 160)
 
-            # 4. CRANE SUSPENDED LOAD: Heavy pulsed crane radar warning horn
+            # 4. CRANE SUSPENDED LOAD: Heavy sub-bass drop-zone foghorn
             elif "SUSPENDED" in atype or "LOAD" in atype or "CRANE" in atype:
-                winsound.Beep(580, 220)
-                time.sleep(0.06)
-                winsound.Beep(580, 220)
+                winsound.Beep(260, 340)
+                time.sleep(0.07)
+                winsound.Beep(300, 380)
 
-            # 5. GEOFENCE / PERIMETER / NIGHT INTRUSION: Alternating security strobe siren
-            elif any(k in atype for k in ["GEOFENCE", "PERIMETER", "INTRUSION", "NIGHT"]):
-                winsound.Beep(980, 140)
-                winsound.Beep(1180, 140)
-                winsound.Beep(980, 140)
+            # 5. GEOFENCE / DANGER PERIMETER: High-speed laser tripwire sweep
+            elif "GEOFENCE" in atype or "PERIMETER" in atype:
+                winsound.Beep(1250, 90)
+                winsound.Beep(850, 90)
+                winsound.Beep(1250, 90)
+                winsound.Beep(850, 90)
 
-            # 6. TRENCH EXCAVATION MARGIN: Deep warning buzz
+            # 6. NIGHT INTRUSION / LOCKDOWN: Tactical police security strobe wail
+            elif "NIGHT" in atype or "INTRUSION" in atype:
+                winsound.Beep(1100, 110)
+                winsound.Beep(1550, 110)
+                winsound.Beep(1100, 110)
+                winsound.Beep(1550, 110)
+                winsound.Beep(1700, 220)
+
+            # 7. TRENCH EXCAVATION MARGIN: Sub-bass ground-rumble caution buzz
             elif "TRENCH" in atype:
-                winsound.Beep(480, 280)
-                time.sleep(0.05)
-                winsound.Beep(480, 180)
+                winsound.Beep(220, 340)
+                time.sleep(0.06)
+                winsound.Beep(196, 380)
 
-            # 7. CONFINED SPACE OVERSTAY: Triple industrial timeout buzzer
+            # 8. CONFINED SPACE WATCHDOG: Resonant subterranean 3-bell timeout chime
             elif "CONFINED" in atype:
-                winsound.Beep(620, 130)
-                time.sleep(0.04)
-                winsound.Beep(740, 130)
-                time.sleep(0.04)
-                winsound.Beep(620, 180)
+                winsound.Beep(520, 200)
+                time.sleep(0.05)
+                winsound.Beep(390, 200)
+                time.sleep(0.05)
+                winsound.Beep(260, 350)
 
-            # 8. HOT WORK / NO EXTINGUISHER: Dual-tone spark warning
+            # 9. HOT WORK / NO EXTINGUISHER: Welding electric arc spark crackle
             elif "HOT_WORK" in atype or "WELDING" in atype:
-                winsound.Beep(880, 110)
-                time.sleep(0.03)
-                winsound.Beep(720, 140)
+                for _ in range(3):
+                    winsound.Beep(1500, 60)
+                    winsound.Beep(750, 60)
 
-            # 9. PPE - NO HELMET: Distinct safety chirp (rising tone)
+            # 10. PPE - NO HELMET: Bright ascending compliance double-chirp
             elif "HELMET" in atype:
-                winsound.Beep(780, 160)
-                winsound.Beep(980, 200)
+                winsound.Beep(650, 130)
+                winsound.Beep(1100, 180)
 
-            # 10. PPE - NO VEST: Safety notice double beep
+            # 11. PPE - NO VEST: Harmonic safety tri-tone chord (C5 - E5 - G5)
             elif "VEST" in atype:
-                winsound.Beep(850, 160)
+                winsound.Beep(523, 110)
+                winsound.Beep(659, 110)
+                winsound.Beep(784, 160)
+
+            # 11b. PPE - NO GLOVES: Dual tactical cautionary pulse (A4 - E5)
+            elif "GLOVE" in atype:
+                winsound.Beep(440, 120)
                 time.sleep(0.04)
-                winsound.Beep(850, 160)
+                winsound.Beep(659, 160)
 
-            # 11. PHONE DISTRACTION: Single subtle notification ping
-            elif "PHONE" in atype:
-                winsound.Beep(820, 130)
-
-            # 12. PROXIMITY HAZARD: Fast proximity sensor double beep
-            elif "PROXIMITY" in atype:
-                winsound.Beep(1000, 90)
+            # 11c. PPE - NO GOGGLES: High-frequency optical alert chime (F5 - A5)
+            elif "GOGGLE" in atype or "GLASSES" in atype:
+                winsound.Beep(698, 110)
                 time.sleep(0.03)
-                winsound.Beep(1000, 90)
+                winsound.Beep(880, 170)
 
-            # 13. SMART TURNSTILE GATE PASS: Ascending harmonious chime (C-E-G chord)
-            elif "GATE_PASS" in atype:
-                winsound.Beep(523, 90)
-                winsound.Beep(659, 90)
-                winsound.Beep(784, 150)
-
-            # 14. SMART TURNSTILE GATE FAIL / ACCESS DENIED: Low rejection double buzz
-            elif "GATE_FAIL" in atype or "GATE_DENIED" in atype:
-                winsound.Beep(320, 170)
+            # 12. PHONE DISTRACTION: Digital mobile SMS double-ping
+            elif "PHONE" in atype:
+                winsound.Beep(1760, 70)
                 time.sleep(0.04)
-                winsound.Beep(260, 200)
+                winsound.Beep(2093, 120)
 
-            # 15. HEAT HAZARD / THERMAL: Staccato caution tone
+            # 13. PROXIMITY HAZARD / FORKLIFT: Rapid reversing ultrasonic collision sonar
+            elif "PROXIMITY" in atype or "FORKLIFT" in atype or "MACHINERY" in atype:
+                winsound.Beep(1400, 60)
+                time.sleep(0.03)
+                winsound.Beep(1400, 60)
+                time.sleep(0.03)
+                winsound.Beep(1600, 70)
+                time.sleep(0.03)
+                winsound.Beep(1800, 110)
+
+            # 14. SMART TURNSTILE GATE PASS: Pleasant ascending arpeggio chime (C-E-G-C)
+            elif "GATE_PASS" in atype:
+                winsound.Beep(523, 80)
+                winsound.Beep(659, 80)
+                winsound.Beep(784, 80)
+                winsound.Beep(1046, 170)
+
+            # 15. SMART TURNSTILE GATE FAIL: Harsh low rejection double buzz
+            elif "GATE_FAIL" in atype or "GATE_DENIED" in atype:
+                winsound.Beep(330, 180)
+                time.sleep(0.05)
+                winsound.Beep(220, 280)
+
+            # 16. HEAT HAZARD / THERMAL: Undulating solar thermal caution wave
             elif "HEAT" in atype or "THERMAL" in atype:
-                winsound.Beep(700, 120)
-                winsound.Beep(700, 120)
+                winsound.Beep(440, 180)
+                winsound.Beep(580, 180)
+                winsound.Beep(440, 180)
+                winsound.Beep(580, 240)
+
+            # 17. AUTOPILOT AWAY MODE: System active confirmation chime
+            elif "AUTOPILOT" in atype:
+                winsound.Beep(880, 100)
+                winsound.Beep(1320, 160)
 
             # General fallbacks by severity
             elif level == "CRITICAL":
-                for _ in range(2):
-                    winsound.Beep(1200, 150)
-                    winsound.Beep(800, 150)
+                winsound.Beep(1200, 150)
+                winsound.Beep(800, 150)
             elif level == "HIGH":
                 winsound.Beep(900, 180)
                 time.sleep(0.04)

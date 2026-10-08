@@ -9,7 +9,7 @@
         {
           "id": "cam_01",
           "name": "CAM 01 - PPE Entry Gate",
-          "source": "0",
+          "source": "1",
           "type": "webcam",
           "focus": "Turnstile Helmet & High-Vis Vest Inspection"
         },
@@ -33,6 +33,27 @@
           "source": "static/images/features/hot_work_welding.jpg",
           "type": "industrial_feed",
           "focus": "Welding Flash & Fire Extinguisher Readiness"
+        }
+      ]
+    },
+    {
+      "id": "zone_2_878",
+      "name": "zone 2 - second floor",
+      "description": "gass",
+      "cameras": [
+        {
+          "id": "cam_zone_2_878_1",
+          "name": "CAM 01 - zone 2 - second floor Main",
+          "source": "static/images/features/helmet_inspection.jpg",
+          "type": "industrial_feed",
+          "focus": "PPE Helmet & Safety Vest Inspection"
+        },
+        {
+          "id": "cam_zone_2_878_2_140",
+          "name": "CAM 02 - Confined Space Entry",
+          "source": "static/images/features/confined_space.jpg",
+          "type": "industrial_feed",
+          "focus": "Confined Space Atmosphere & Headcount Safety"
         }
       ]
     }

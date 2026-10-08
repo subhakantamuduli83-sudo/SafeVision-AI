@@ -12,439 +12,1393 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <!-- Top Navigation Bar -->
-    <header class="navbar" id="mainNavbar">
-        <!-- 1. Left: Brand Logo & Title -->
-        <div class="nav-brand">
-            <div class="logo-icon">🛡️</div>
-            <div class="brand-text">
-                <h1>SafeVision AI <span class="badge-edition">ENTERPRISE</span></h1>
-            </div>
-        </div>
-
-        <!-- 2. Center: Real-time Status Badges -->
-        <div class="nav-status" id="navStatusGroup">
-            <div class="status-indicator">
-                <span class="pulse-dot"></span>
-                <span class="status-label">EDGE AI ACTIVE</span>
-            </div>
-            <div class="zone-badge" id="currentZoneBadge" style="cursor: pointer;" title="Click to manage & switch industrial zones">📍 <span id="navZoneText">Zone 1 - Main Floor</span> ⚙️</div>
-            <div class="clock-display" id="clockDisplay">00:00:00</div>
-        </div>
-
-        <!-- 3. Right: All Action Controls in 1 Line -->
-        <div class="nav-actions" id="navActions">
-            <button class="btn btn-sensitivity" id="btnQuickSensitivity" title="Cycle AI Detection Sensitivity: Ultra / High / Standard">
-                ⚡ <span id="navSensitivityText">ULTRA</span>
-            </button>
-            <button class="btn btn-autopilot" id="btnAutoPilotToggle" title="Toggle 24/7 Autonomous Supervisor Away Mode">
-                🤖 <span id="autoPilotText">AUTO: OFF</span>
-            </button>
-            <button class="btn btn-secondary" id="btnMasterControlModal" title="Open Master Feature Switchboard">
-                🎛️ Controls
-            </button>
-            <button class="btn btn-copilot" id="btnOpenCopilot" title="Open AI Safety Copilot">
-                🤖 Copilot
-            </button>
-            <button class="btn btn-secondary" id="btnOpenScorecard" title="View Executive Safety Scorecard & 2D Heatmap">
-                🏆 Scorecard
-            </button>
-            <button class="btn btn-secondary btn-gallery" id="btnOpenFeatureGallery" title="Explore All Safety Features & Dedicated Siren Profiles">
-                📸 Features
-            </button>
-            
-            <!-- Quick Tools Dropdown Menu -->
-            <div class="dropdown-wrapper" id="toolsDropdownWrapper">
-                <button class="btn btn-secondary dropdown-trigger-btn" id="btnToolsMenu" type="button" title="More Safety & Configuration Tools">
-                    ⚙️ Tools ▾
-                </button>
-                <div class="dropdown-popup-menu" id="toolsMenuContent">
-                    <button type="button" class="dropdown-menu-item" id="btnMenuFeatureGallery">
-                        📸 Features & Sirens Gallery
-                    </button>
-                    <button type="button" class="dropdown-menu-item" id="btnGateModeToggle">
-                        🚪 <span id="gateModeText">Turnstile Gate Mode</span>
-                    </button>
-                    <button type="button" class="dropdown-menu-item" id="btnIndustrialModulesModal">
-                        🏗️ Site Safety Modules
-                    </button>
-                    <button type="button" class="dropdown-menu-item" id="btnDangerZoneModal">
-                        🛑 Danger Geofence
-                    </button>
-                    <button type="button" class="dropdown-menu-item" id="btnTelegramModal">
-                        📱 Mobile Telegram
-                    </button>
-                    <button type="button" class="dropdown-menu-item" id="btnDemoToggle">
-                        🧪 <span id="demoStatusText">Heat Demo Simulation</span>
-                    </button>
-                    <button type="button" class="dropdown-menu-item" id="btnAudioTest">
-                        🔊 Test Speaker Siren
-                    </button>
-                    <button type="button" class="dropdown-menu-item" id="btnMuteToggle">
-                        🔔 <span id="muteStatusText">Mute/Unmute Siren</span>
-                    </button>
-                    <button type="button" class="dropdown-menu-item" id="btnCameraSettings">
-                        📹 Camera Stream Setup
-                    </button>
-                </div>
-            </div>
-        </div>
-    </header>
-
-    <!-- Auto-Pilot / Supervisor Away Active Banner -->
-    <div class="autopilot-active-banner" id="autoPilotBanner" style="display: none;">
-        <div class="autopilot-banner-content">
-            <span class="autopilot-pulse-icon">🤖</span>
-            <div class="autopilot-banner-text">
-                <strong>24/7 AUTO-PILOT ENGAGED (SUPERVISOR AWAY MODE):</strong>
-                <span>All autonomous vision detectors, multi-channel sirens & mobile Telegram photo dispatches are armed.</span>
-            </div>
-        </div>
-        <div class="autopilot-banner-actions">
-            <button class="btn btn-sm btn-outline-light" id="btnDisarmAutoPilot">✕ Disarm Auto Mode</button>
-        </div>
-    </div>
-
-
-
-    <!-- Visual Thermal / Weather Alert Banner (Shown dynamically on High/Critical Heat Risk) -->
-    <div class="visual-alert-bar" id="weatherAlertBanner" style="display: none;">
-        <div class="visual-alert-content">
-            <div class="visual-alert-icon" id="weatherAlertIcon">🔴</div>
-            <div class="visual-alert-details">
-                <div class="visual-alert-title">
-                    <span class="alert-headline" id="weatherAlertHeadline">CRITICAL THERMAL HAZARD DETECTED</span>
-                    <span class="badge-risk-tag" id="weatherAlertRiskTag">CRITICAL</span>
-                </div>
-                <div class="visual-alert-metrics" id="weatherAlertMetrics">
-                    Temperature: <strong>41.5°C</strong> | Humidity: <strong>76%</strong> | Heat Index: <strong>52.3°C</strong>
-                </div>
-                <div class="visual-alert-explanation" id="weatherAlertExplanation">
-                    <strong>Why detected:</strong> Heat Index exceeded critical threshold. Extreme risk of heat exhaustion.
-                </div>
-            </div>
-        </div>
-        <button class="btn btn-sm btn-dismiss" id="btnDismissWeatherAlert">✕</button>
-    </div>
-
-    <!-- Weather API Offline Banner (Shown when API is unreachable) -->
-    <div class="offline-banner" id="weatherOfflineBanner" style="display: none;">
-        <div class="offline-content">
-            <span class="offline-icon">🔴</span>
-            <span><strong>Weather API Offline:</strong> Connection unavailable. Displaying cached data. <span id="offlineLastUpdated"></span></span>
-        </div>
-        <button class="btn btn-sm btn-outline" id="btnRetryWeather">🔄 Retry Connection</button>
-    </div>
-
-    <!-- Demo Mode Active Banner -->
-    <div class="demo-active-banner" id="demoBanner" style="display: none;">
-        <span>⚠️ <strong>DATA MODE: DEMO SIMULATION ACTIVE</strong> — Synthetic values for testing extreme heat anomalies. Real API feed paused.</span>
-        <div class="demo-actions">
-            <button class="btn btn-sm btn-accent" id="btnDemoHeatSpike">🔥 Trigger Heat Spike (43°C)</button>
-            <button class="btn btn-sm btn-secondary" id="btnDemoNormal">🌿 Normal Weather (29°C)</button>
-            <button class="btn btn-sm btn-outline" id="btnDisableDemo">Exit Demo Mode</button>
-        </div>
-    </div>
-
-    <!-- Main Dashboard Container -->
-    <main class="dashboard-grid">
+    <!-- Enterprise App Shell with Left Sidebar & Dedicated Views -->
+    <div class="app-shell">
         
-        <!-- Left Column: Video Feed & Live HUD -->
-        <section class="video-section card">
-            <!-- Zone & CCTV Matrix Ribbon Toolbar -->
-            <div class="zone-cctv-bar">
-                <div class="zone-pills-scroll" id="zoneTabsList">
-                    <!-- Populated dynamically via JS: Zone 1, Zone 2, etc. -->
-                    <button type="button" class="zone-pill active" data-zone="zone_1">
-                        <span class="pill-dot"></span> 📍 Zone 1 - Main Floor <span class="cam-count-tag" id="zone1CamCount">4 Cams</span>
-                    </button>
-                    <button type="button" class="btn-add-zone-pill" id="btnQuickAddZone" title="Add New Industrial Zone">
-                        ➕ Add Zone
-                    </button>
-                </div>
-                <div class="cctv-view-controls">
-                    <div class="view-mode-toggle">
-                        <button type="button" class="view-btn active" id="btnViewGrid" title="Display all cameras for active zone in a live Multi-Grid">
-                            🎛️ Multi-Grid
-                        </button>
-                        <button type="button" class="view-btn" id="btnViewFocus" title="Focus on single camera in full view">
-                            🔍 Single Cam
-                        </button>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline btn-manage-cams" id="btnOpenZoneModal" title="Open Custom Zone & Camera Manager">
-                        ⚙️ Setup Zone / Cams
-                    </button>
+        <!-- ================= 1. LEFT SIDEBAR NAVIGATION ================= -->
+        <aside class="app-sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">🛡️</div>
+                <div class="sidebar-brand-text">
+                    <h2>SafeVision AI</h2>
+                    <span class="brand-tag">ENTERPRISE 2.0</span>
                 </div>
             </div>
 
-            <div class="card-header">
-                <div class="header-left">
-                    <span class="live-tag">● LIVE STREAM</span>
-                    <span class="feed-source-label" id="activeSourceLabel">Zone 1: 4 Cams Active</span>
-                    <span class="mode-badge" id="liveModeBadge" style="display: none;">🚪 GATE INSPECTOR</span>
+            <!-- Primary Navigation Links (6 Dedicated Views) -->
+            <nav class="sidebar-nav">
+                <a href="#live" class="sidebar-nav-item active" data-target="view-live" title="Live Video Wall & AI Bounding Boxes">
+                    <span class="nav-icon">📹</span>
+                    <span class="nav-label">Live Vision Hub</span>
+                    <span class="nav-badge" id="sideLiveBadge">27 FPS</span>
+                </a>
+
+                <a href="#incidents" class="sidebar-nav-item" data-target="view-incidents" title="Incident Logs, Snapshots & Telegram Dispatch">
+                    <span class="nav-icon">🚨</span>
+                    <span class="nav-label">Incident Dispatch</span>
+                    <span class="nav-badge" id="sideIncidentBadge">LIVE</span>
+                </a>
+
+                <a href="#modules" class="sidebar-nav-item" data-target="view-modules" title="14 AI Site Safety Modules & Master Controls">
+                    <span class="nav-icon">🎛️</span>
+                    <span class="nav-label">Master Module</span>
+                    <span class="nav-badge">14 ON</span>
+                </a>
+
+                <a href="#features" class="sidebar-nav-item" data-target="view-features" title="Complete Directory & Matrix of All 14 AI Site Safety Features">
+                    <span class="nav-icon">✨</span>
+                    <span class="nav-label">All Features</span>
+                    <span class="nav-badge" style="background: rgba(56, 189, 248, 0.2); color: #38BDF8;">14 AI</span>
+                </a>
+
+                <a href="#analytics" class="sidebar-nav-item" data-target="view-analytics" title="Executive Scorecard, 2D Heatmap & PDF Reports">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">Analytics & Reports</span>
+                    <span class="nav-badge">A+</span>
+                </a>
+
+                <a href="#copilot" class="sidebar-nav-item" data-target="view-copilot" title="Gemini AI Safety Assistant & Weather Station">
+                    <span class="nav-icon">🤖</span>
+                    <span class="nav-label">AI Safety Copilot</span>
+                    <span class="nav-badge">AI</span>
+                </a>
+
+                <a href="#settings" class="sidebar-nav-item" data-target="view-settings" title="Telegram Bot, Sirens, Audio & Hardware Setup">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">System Settings</span>
+                </a>
+
+                <!-- Active Features Mini Strip inside Sidebar -->
+                <div class="sidebar-features-section">
+                    <div class="sidebar-section-header">
+                        <span>⚡ ACTIVE AI SUITE</span>
+                        <span class="badge-mini">14 ARMED</span>
+                    </div>
+                    <div class="features-mini-list">
+                        <span class="feature-mini-pill" title="Hardhat & Vest PPE Check">🪖 PPE</span>
+                        <span class="feature-mini-pill" title="Fall & Collapse SOS">🚨 Fall</span>
+                        <span class="feature-mini-pill" title="Crane Drop Zone Radar">📦 DropZone</span>
+                        <span class="feature-mini-pill" title="Confined Space Headcount">🚪 Confined</span>
+                        <span class="feature-mini-pill" title="Hot Work & Fire Watch">⚡ HotWork</span>
+                        <span class="feature-mini-pill" title="Heavy Plant Collision Radar">🚜 Proximity</span>
+                        <span class="feature-mini-pill" title="Trench Setback Safety">⚠️ Trench</span>
+                        <span class="feature-mini-pill" title="Phone Distraction Alert">📱 Phone</span>
+                    </div>
                 </div>
-                <div class="header-right">
-                    <button class="btn-icon" id="btnRefreshFeed" title="Reconnect Feed">🔄</button>
-                    <button class="btn-icon" id="btnFullscreen" title="Fullscreen">⛶</button>
+            </nav>
+
+            <!-- Sidebar Footer: Edge Hardware Diagnostics -->
+            <div class="sidebar-footer">
+                <div class="sidebar-engine-card">
+                    <div class="engine-row">
+                        <span class="engine-title">AI Engine</span>
+                        <span class="engine-val">YOLO11-nano</span>
+                    </div>
+                    <div class="engine-row">
+                        <span class="engine-title">Processor</span>
+                        <span class="engine-val" id="sidebarProcessorVal" style="color: #38BDF8; font-weight: 600;">Intel(R) NPU + GPU ⚡</span>
+                    </div>
+                    <div class="engine-row">
+                        <span class="engine-title">Latency</span>
+                        <span class="engine-val">~37 ms</span>
+                    </div>
                 </div>
             </div>
+        </aside>
 
-            <div class="video-container" id="videoWrapper">
-                <!-- 1. CCTV Multi-Camera Grid View (Default) -->
-                <div class="cctv-grid-layout" id="cctvGridLayout">
-                    <!-- Dynamic Camera Cards injected by JS -->
-                </div>
-
-                <!-- 2. Single Focus Camera View (Shown when Focus Mode or Tile clicked) -->
-                <div class="cctv-single-layout" id="cctvSingleLayout" style="display: none;">
-                    <div class="single-video-stage">
-                        <img src="/video_feed" id="liveVideoFeed" alt="Live CCTV AI Feed" class="video-player">
-                    </div>
-                    <div class="cctv-thumbnail-strip" id="cctvThumbnailStrip">
-                        <!-- Mini camera thumbnails injected by JS -->
-                    </div>
-                </div>
-                
-                <!-- Live Emergency Overlay (Shown only during fire/smoke/fall) -->
-                <div class="hazard-alert-banner" id="hazardBanner" style="display: none;">
-                    <div class="hazard-icon" id="hazardIcon">🔥</div>
-                    <div class="hazard-text">
-                        <h3 id="hazardTitle">CRITICAL HAZARD DETECTED</h3>
-                        <p id="hazardDesc">Fire/Smoke signature detected. Siren activated.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Fast Camera Switch Bar -->
-            <div class="quick-source-bar">
-                <form id="quickSourceForm" class="quick-form">
-                    <label>Quick Connect:</label>
-                    <input type="text" id="quickSourceInput" placeholder="DroidCam URL (http://192.168.1.15:4747/video), USB (1), or Webcam (0)" value="0">
-                    <button type="submit" class="btn btn-sm btn-accent">Switch Feed</button>
-                    <input type="file" id="mediaUploadInput" accept="image/*,video/*" style="display: none;">
-                    <button type="button" class="btn btn-sm btn-outline" id="btnUploadMedia" title="Upload local image or video to test AI inspection">📁 Upload Media</button>
-                    <button type="button" class="btn btn-sm btn-outline" id="btnWebcamPreset" title="Reset to Laptop Webcam">📷 Webcam</button>
-                </form>
-            </div>
-        </section>
-
-        <!-- Right Column: Metrics & Real-time Incident Feed -->
-        <section class="metrics-section">
+        <!-- ================= MAIN CONTENT WRAPPER ================= -->
+        <div class="app-main">
             
-            <!-- KPI Summary Cards (PPE & Floor Safety) -->
-            <div class="kpi-grid">
-                
-                <!-- Compliance Rate -->
-                <div class="kpi-card highlight-card">
-                    <div class="kpi-header">
-                        <span>Compliance Rate</span>
-                        <span class="kpi-icon">📊</span>
-                    </div>
-                    <div class="kpi-body">
-                        <div class="gauge-container">
-                            <span class="kpi-number" id="kpiCompliance">100%</span>
-                        </div>
-                        <div class="kpi-subtext" id="kpiComplianceSub">All workers compliant</div>
+            <!-- Global Enterprise Topbar -->
+            <header class="app-topbar">
+                <div class="topbar-left">
+                    <span class="page-title-badge" id="navPageTitle">📹 Live Vision & Camera Hub</span>
+                    <div class="status-indicator">
+                        <span class="pulse-dot"></span>
+                        <span class="status-label">EDGE AI ACTIVE</span>
                     </div>
                 </div>
 
-                <!-- Total Workers -->
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <span>Workers on Floor</span>
-                        <span class="kpi-icon">👷</span>
+                <div class="topbar-right">
+                    <div class="zone-badge" id="currentZoneBadge" style="cursor: pointer;" title="Manage & switch industrial zones">
+                        📍 <span id="navZoneText">Zone 1 - Main Floor</span> ⚙️
                     </div>
-                    <div class="kpi-body">
-                        <span class="kpi-number" id="kpiWorkers">0</span>
-                        <div class="kpi-subtext"><span id="kpiCompliantWorkers">0</span> Compliant</div>
-                    </div>
-                </div>
-
-                <!-- Active Violations -->
-                <div class="kpi-card" id="cardViolations">
-                    <div class="kpi-header">
-                        <span>Active Violations</span>
-                        <span class="kpi-icon">⚠️</span>
-                    </div>
-                    <div class="kpi-body">
-                        <span class="kpi-number alert-text" id="kpiViolations">0</span>
-                        <div class="kpi-subtext" id="kpiViolationDetails">No active violations</div>
-                    </div>
-                </div>
-
-                <!-- Safety Hazard Status -->
-                <div class="kpi-card" id="cardHazard">
-                    <div class="kpi-header">
-                        <span>Floor Safety Status</span>
-                        <span class="kpi-icon">🛡️</span>
-                    </div>
-                    <div class="kpi-body">
-                        <span class="kpi-badge badge-safe" id="kpiHazardStatus">SAFE</span>
-                        <div class="kpi-subtext" id="kpiHazardDetails">All modules clear</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Multi-Hazard Live Telemetry Status Strip -->
-            <div class="telemetry-status-strip">
-                <span class="tele-tag" id="tagFall">🚶 Fall: Normal</span>
-                <span class="tele-tag" id="tagGeofence">🛑 Geofence: Secure</span>
-                <span class="tele-tag" id="tagHeight">🏗️ Height: Secure</span>
-                <span class="tele-tag" id="tagDropZone">📦 Drop Zone: Clear</span>
-                <span class="tele-tag" id="tagConfined">🚪 Confined: 0 Safe</span>
-                <span class="tele-tag" id="tagHotWork">⚡ Hot Work: Clear</span>
-                <span class="tele-tag" id="tagTrench">⚠️ Trench: Setback Safe</span>
-                <span class="tele-tag" id="tagProximity">🚜 Proximity: Clear</span>
-                <span class="tele-tag" id="tagNight">🌙 Night Guard: Off</span>
-            </div>
-
-            <!-- Incident Audit & Live Log Feed -->
-            <div class="incidents-panel card">
-                <div class="card-header">
-                    <div class="header-left">
-                        <h3>Recent Safety Incidents & Evidence Snapshots</h3>
-                    </div>
-                    <div class="header-right">
-                        <a href="/api/export/pdf" target="_blank" class="btn btn-sm btn-outline">📄 PDF Audit</a>
-                        <a href="/api/export/csv" class="btn btn-sm btn-outline">📊 CSV</a>
-                    </div>
-                </div>
-
-                <div class="incidents-list" id="incidentsContainer">
-                    <div class="empty-state">Loading incident logs...</div>
-                </div>
-            </div>
-
-        </section>
-
-    </main>
-
-    <!-- Real-Time Weather Monitoring & Visual Alert Command Section -->
-    <section class="weather-dashboard-section">
-        <div class="weather-panel card">
-            
-            <div class="weather-panel-header">
-                <div class="weather-title-block">
-                    <div class="weather-badge-icon">🌤️</div>
-                    <div>
-                        <h2>Real-Time Environmental & Heat Stress Monitoring</h2>
-                        <div class="weather-location-meta">
-                            <span id="weatherLocationName">📍 Bhubaneswar, Odisha, India</span>
-                            <span class="sep">•</span>
-                            <span>Data Source: <strong id="weatherDataSourceTag" class="source-tag">Real-Time Weather API</strong></span>
-                            <span class="sep">•</span>
-                            <span>Last Updated: <strong id="weatherLastUpdatedText">--</strong></span>
-                        </div>
-                    </div>
-                </div>
-                <div class="weather-header-actions">
-                    <button class="btn btn-sm btn-primary" id="btnRefreshWeatherNow">
-                        <span id="refreshSpinner" class="spinner-icon">🔄</span> Refresh Now
+                    <button class="btn btn-sensitivity" id="btnQuickSensitivity" title="Cycle AI Sensitivity: Ultra / High / Standard">
+                        ⚡ <span id="navSensitivityText">ULTRA</span>
                     </button>
+                    <button class="btn btn-autopilot" id="btnAutoPilotToggle" title="Toggle 24/7 Supervisor Away Mode">
+                        🤖 <span id="autoPilotText">AUTO: OFF</span>
+                    </button>
+                    <button class="btn btn-secondary" id="btnMuteToggle" title="Mute/Unmute Siren Alarm">
+                        🔔 <span id="muteStatusText">Mute Siren</span>
+                    </button>
+                    <div class="clock-display" id="clockDisplay">00:00:00</div>
+
+                    <!-- Hidden legacy buttons for JS binding compatibility -->
+                    <div style="display: none;">
+                        <button id="btnMasterControlModal"></button>
+                        <button id="btnOpenCopilot"></button>
+                        <button id="btnOpenScorecard"></button>
+                        <button id="btnOpenFeatureGallery"></button>
+                        <button id="btnToolsMenu"></button>
+                        <button id="btnMenuFeatureGallery"></button>
+                        <button id="btnGateModeToggle"></button>
+                        <span id="gateModeText"></span>
+                        <button id="btnIndustrialModulesModal"></button>
+                        <button id="btnDangerZoneModal"></button>
+                        <button id="btnTelegramModal"></button>
+                        <div id="toolsDropdownWrapper"></div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Auto-Pilot / Supervisor Away Active Banner -->
+            <div class="autopilot-active-banner" id="autoPilotBanner" style="display: none;">
+                <div class="autopilot-banner-content">
+                    <span class="autopilot-pulse-icon">🤖</span>
+                    <div class="autopilot-banner-text">
+                        <strong>24/7 AUTO-PILOT ENGAGED (SUPERVISOR AWAY MODE):</strong>
+                        <span>All autonomous vision detectors, multi-channel sirens & mobile Telegram photo dispatches are armed.</span>
+                    </div>
+                </div>
+                <div class="autopilot-banner-actions">
+                    <button class="btn btn-sm btn-outline-light" id="btnDisarmAutoPilot">✕ Disarm Auto Mode</button>
                 </div>
             </div>
 
-            <div class="weather-kpi-grid">
-                
-                <!-- 1. Temperature Card -->
-                <div class="weather-card">
-                    <div class="weather-card-top">
-                        <span class="weather-card-label">CURRENT TEMPERATURE</span>
-                        <span class="weather-card-icon">🌡️</span>
+            <!-- Visual Thermal / Weather Alert Banner -->
+            <div class="visual-alert-bar" id="weatherAlertBanner" style="display: none;">
+                <div class="visual-alert-content">
+                    <div class="visual-alert-icon" id="weatherAlertIcon">🔴</div>
+                    <div class="visual-alert-details">
+                        <div class="visual-alert-title">
+                            <span class="alert-headline" id="weatherAlertHeadline">CRITICAL THERMAL HAZARD DETECTED</span>
+                            <span class="badge-risk-tag" id="weatherAlertRiskTag">CRITICAL</span>
+                        </div>
+                        <div class="visual-alert-metrics" id="weatherAlertMetrics">
+                            Temperature: <strong>41.5°C</strong> | Humidity: <strong>76%</strong> | Heat Index: <strong>52.3°C</strong>
+                        </div>
+                        <div class="visual-alert-explanation" id="weatherAlertExplanation">
+                            <strong>Why detected:</strong> Heat Index exceeded critical threshold. Extreme risk of heat exhaustion.
+                        </div>
                     </div>
-                    <div class="weather-card-value">
-                        <span class="metric-val" id="valTemperature">--.-</span>
-                        <span class="metric-unit">°C</span>
+                </div>
+                <button class="btn btn-sm btn-dismiss" id="btnDismissWeatherAlert">✕</button>
+            </div>
+
+            <!-- Weather API Offline Banner -->
+            <div class="offline-banner" id="weatherOfflineBanner" style="display: none;">
+                <div class="offline-content">
+                    <span class="offline-icon">🔴</span>
+                    <span><strong>Weather API Offline:</strong> Connection unavailable. Displaying cached data. <span id="offlineLastUpdated"></span></span>
+                </div>
+                <button class="btn btn-sm btn-outline" id="btnRetryWeather">🔄 Retry Connection</button>
+            </div>
+
+            <!-- Demo Mode Active Banner -->
+            <div class="demo-active-banner" id="demoBanner" style="display: none;">
+                <span>⚠️ <strong>DATA MODE: DEMO SIMULATION ACTIVE</strong> — Synthetic values for testing extreme heat anomalies. Real API feed paused.</span>
+                <div class="demo-actions">
+                    <button class="btn btn-sm btn-accent" id="btnDemoHeatSpike">🔥 Trigger Heat Spike (43°C)</button>
+                    <button class="btn btn-sm btn-secondary" id="btnDemoNormal">🌿 Normal Weather (29°C)</button>
+                    <button class="btn btn-sm btn-outline" id="btnDisableDemo">Exit Demo Mode</button>
+                    <button id="btnDemoToggle" style="display: none;"><span id="demoStatusText"></span></button>
+                </div>
+            </div>
+
+
+            <!-- ========================================================== -->
+            <!-- VIEW 1: LIVE VISION & CAMERA HUB                           -->
+            <!-- ========================================================== -->
+            <div class="dashboard-view active" id="view-live">
+                <div class="live-vision-layout">
+                    
+                    <!-- Left: Video Feed & Live CCTV Wall (Full Width) -->
+                    <section class="video-section card live-video-wall">
+                        <!-- Zone & CCTV Matrix Ribbon Toolbar -->
+                        <div class="zone-cctv-bar">
+                            <div class="zone-pills-scroll" id="zoneTabsList">
+                                <button type="button" class="zone-pill active" data-zone="zone_1">
+                                    <span class="pill-dot"></span> 📍 Zone 1 - Main Floor <span class="cam-count-tag" id="zone1CamCount">4 Cams</span>
+                                </button>
+                                <button type="button" class="btn-add-zone-pill" id="btnQuickAddZone" title="Add New Industrial Zone">
+                                    ➕ Add Zone
+                                </button>
+                            </div>
+                            <div class="cctv-view-controls">
+                                <div class="view-mode-toggle">
+                                    <button type="button" class="view-btn active" id="btnViewGrid" title="Display all cameras in Multi-Grid">
+                                        🎛️ Multi-Grid
+                                    </button>
+                                    <button type="button" class="view-btn" id="btnViewFocus" title="Focus on single camera in full view">
+                                        🔍 Single Cam
+                                    </button>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline btn-manage-cams" id="btnOpenZoneModal" title="Zone & Camera Setup">
+                                    ⚙️ Setup Cams
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card-header">
+                            <div class="header-left">
+                                <span class="live-tag">● LIVE STREAM</span>
+                                <span class="feed-source-label" id="activeSourceLabel">Zone 1: Active Cameras</span>
+                                <span class="mode-badge" id="liveModeBadge" style="display: none;">🚪 GATE INSPECTOR</span>
+                            </div>
+                            <div class="header-right">
+                                <button class="btn-icon" id="btnRefreshFeed" title="Reconnect Feed">🔄</button>
+                                <button class="btn-icon" id="btnFullscreen" title="Fullscreen">⛶</button>
+                            </div>
+                        </div>
+
+                        <div class="video-container" id="videoWrapper">
+                            <!-- 1. CCTV Multi-Camera Grid View (Default) -->
+                            <div class="cctv-grid-layout" id="cctvGridLayout"></div>
+
+                            <!-- 2. Single Focus Camera View -->
+                            <div class="cctv-single-layout" id="cctvSingleLayout" style="display: none;">
+                                <div class="single-video-stage">
+                                    <img src="" id="liveVideoFeed" alt="Live CCTV AI Feed" class="video-player">
+                                </div>
+                                <div class="cctv-thumbnail-strip" id="cctvThumbnailStrip"></div>
+                            </div>
+                            
+                            <!-- Live Emergency Hazard Overlay -->
+                            <div class="hazard-alert-banner" id="hazardBanner" style="display: none;">
+                                <div class="hazard-icon" id="hazardIcon">🔥</div>
+                                <div class="hazard-text">
+                                    <h3 id="hazardTitle">CRITICAL HAZARD DETECTED</h3>
+                                    <p id="hazardDesc">Hazard signature detected. Siren armed.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Fast Camera Switch Bar -->
+                        <div class="quick-source-bar">
+                            <form id="quickSourceForm" class="quick-form">
+                                <label>Quick Connect:</label>
+                                <input type="text" id="quickSourceInput" placeholder="DroidCam URL (http://192.168.1.15:4747/video), USB (1), or Webcam (0)" value="0">
+                                <button type="submit" class="btn btn-sm btn-accent">Switch Feed</button>
+                                <input type="file" id="mediaUploadInput" accept="image/*,video/*" style="display: none;">
+                                <button type="button" class="btn btn-sm btn-outline" id="btnUploadMedia" title="Upload local image or video to test AI inspection">📁 Upload Media</button>
+                                <button type="button" class="btn btn-sm btn-outline" id="btnWebcamPreset" title="Reset to Laptop Webcam">📷 Webcam</button>
+                            </form>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+
+            <!-- ========================================================== -->
+            <!-- VIEW 2: INCIDENT MANAGEMENT & DISPATCH                     -->
+            <!-- ========================================================== -->
+            <div class="dashboard-view" id="view-incidents">
+                <div class="view-header-strip">
+                    <div class="view-header-left">
+                        <h2>🚨 Incident Management & Evidence Dispatch</h2>
+                        <p>Real-time audit log of safety infractions, captured evidence snapshots, and Telegram mobile alert history.</p>
                     </div>
-                    <div class="weather-card-footer">
-                        <span class="status-pill status-normal" id="badgeTempStatus">Optimal</span>
-                        <span class="trend-indicator" id="trendIndicator">→ Steady</span>
+                    <div class="view-header-actions">
+                        <a href="/api/export/pdf" download="Safety_Compliance_Audit_Report.pdf" class="btn btn-sm btn-outline">📄 PDF Audit Report</a>
+                        <a href="/api/export/csv" download="safety_incidents.csv" class="btn btn-sm btn-outline">📊 Export CSV</a>
                     </div>
                 </div>
 
-                <!-- 2. Relative Humidity Card -->
-                <div class="weather-card">
-                    <div class="weather-card-top">
-                        <span class="weather-card-label">RELATIVE HUMIDITY</span>
-                        <span class="weather-card-icon">💧</span>
+                <div class="incidents-page-body">
+                    <!-- Real-Time Safety Metrics Summary (4 KPI Cards) -->
+                    <div class="incident-kpi-grid">
+                        <!-- Compliance Rate -->
+                        <div class="kpi-card highlight-card">
+                            <div class="kpi-header">
+                                <span>Compliance Rate</span>
+                                <span class="kpi-icon">📊</span>
+                            </div>
+                            <div class="kpi-body">
+                                <div class="gauge-container">
+                                    <span class="kpi-number" id="kpiCompliance">100%</span>
+                                </div>
+                                <div class="kpi-subtext" id="kpiComplianceSub">All workers compliant</div>
+                            </div>
+                        </div>
+
+                        <!-- Total Workers -->
+                        <div class="kpi-card">
+                            <div class="kpi-header">
+                                <span>Workers on Floor</span>
+                                <span class="kpi-icon">👷</span>
+                            </div>
+                            <div class="kpi-body">
+                                <span class="kpi-number" id="kpiWorkers">0</span>
+                                <div class="kpi-subtext"><span id="kpiCompliantWorkers">0</span> Compliant</div>
+                            </div>
+                        </div>
+
+                        <!-- Active Violations -->
+                        <div class="kpi-card" id="cardViolations">
+                            <div class="kpi-header">
+                                <span>Active Violations</span>
+                                <span class="kpi-icon">⚠️</span>
+                            </div>
+                            <div class="kpi-body">
+                                <span class="kpi-number alert-text" id="kpiViolations">0</span>
+                                <div class="kpi-subtext" id="kpiViolationDetails">No active violations</div>
+                            </div>
+                        </div>
+
+                        <!-- Safety Hazard Status -->
+                        <div class="kpi-card" id="cardHazard">
+                            <div class="kpi-header">
+                                <span>Floor Safety Status</span>
+                                <span class="kpi-icon">🛡️</span>
+                            </div>
+                            <div class="kpi-body">
+                                <span class="kpi-badge badge-safe" id="kpiHazardStatus">SAFE</span>
+                                <div class="kpi-subtext" id="kpiHazardDetails">All modules clear</div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="weather-card-value">
-                        <span class="metric-val" id="valHumidity">--</span>
-                        <span class="metric-unit">%</span>
+
+                    <!-- Multi-Hazard Live Telemetry Status Strip -->
+                    <div class="telemetry-status-strip incident-telemetry-bar">
+                        <span class="tele-tag" id="tagFall">🚶 Fall: Normal</span>
+                        <span class="tele-tag" id="tagGeofence">🛑 Geofence: Secure</span>
+                        <span class="tele-tag" id="tagHeight">🏗️ Height: Secure</span>
+                        <span class="tele-tag" id="tagDropZone">📦 Drop Zone: Clear</span>
+                        <span class="tele-tag" id="tagConfined">🚪 Confined: 0 Safe</span>
+                        <span class="tele-tag" id="tagHotWork">⚡ Hot Work: Clear</span>
+                        <span class="tele-tag" id="tagTrench">⚠️ Trench: Setback Safe</span>
+                        <span class="tele-tag" id="tagProximity">🚜 Proximity: Clear</span>
+                        <span class="tele-tag" id="tagNight">🌙 Night Guard: Off</span>
                     </div>
-                    <div class="weather-card-footer">
-                        <span class="status-pill status-info" id="badgeHumidityStatus">Comfortable</span>
-                        <span class="sub-metric" id="valWindPressure">💨 0.0 km/h | 1013 hPa</span>
+
+                    <div class="incidents-view-grid">
+                        <div class="incidents-toolbar">
+                            <div class="filter-pills-group">
+                                <button type="button" class="filter-pill-btn active" data-filter="all">All Incidents</button>
+                                <button type="button" class="filter-pill-btn" data-filter="critical" style="color: #EF4444;">🚨 Critical (Fire / Fall)</button>
+                                <button type="button" class="filter-pill-btn" data-filter="high" style="color: #F59E0B;">⚠️ High (PPE / Harness)</button>
+                                <button type="button" class="filter-pill-btn" data-filter="resolved">✅ Resolved</button>
+                            </div>
+                            <div>
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">Real-time database sync active</span>
+                            </div>
+                        </div>
+
+                        <!-- Full Incidents List Container (Bound to app.js) -->
+                        <div class="incidents-panel card" style="min-height: 480px;">
+                            <div class="incidents-list" id="incidentsContainer">
+                                <div class="empty-state">Loading incident evidence logs...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- ========================================================== -->
+            <!-- VIEW 3: MASTER MODULE CONTROL HUB (14 DETECTORS)           -->
+            <!-- ========================================================== -->
+            <div class="dashboard-view" id="view-modules">
+                <div class="view-header-strip">
+                    <div class="view-header-left">
+                        <h2>🎛️ Master Module Control & Policy Hub</h2>
+                        <p>Centralized master supervisor control over all 14 AI neural inspection modules, thresholds, and operational presets.</p>
+                    </div>
+                    <div class="view-header-actions">
+                        <span class="sensitivity-live-pill" id="sensitivityLivePill">
+                            <span class="pulse-indicator"></span>
+                            <span id="sensitivityPillText">ULTRA STRICT (15% CONF)</span>
+                        </span>
                     </div>
                 </div>
 
-                <!-- 3. NOAA Heat Index Card -->
-                <div class="weather-card highlight-weather-card">
-                    <div class="weather-card-top">
-                        <span class="weather-card-label">CALCULATED HEAT INDEX</span>
-                        <span class="weather-card-icon">☀️</span>
+                <!-- Operational Shift Presets -->
+                <div class="preset-selection-panel" style="margin-bottom: 20px;">
+                    <div class="preset-label">⚡ 1-Click Operational Shift Presets:</div>
+                    <div class="preset-chips-grid">
+                        <button type="button" class="preset-btn btn-preset-auto" data-preset="auto_pilot">
+                            🤖 Supervisor Away (Full Auto)
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="construction">
+                            🏗️ Construction Site
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="hot_work_plant">
+                            ⚡ Hot Work Plant
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="clean_ppe_only">
+                            🛡️ Clean PPE Only
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="night_guard">
+                            🌙 Night Guard
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="all_on">
+                            🚀 Arm All 14 Modules
+                        </button>
+                        <button type="button" class="preset-btn btn-preset-off" data-preset="all_off">
+                            🧹 Disarm All
+                        </button>
                     </div>
-                    <div class="weather-card-value">
-                        <span class="metric-val" id="valHeatIndex">--.-</span>
-                        <span class="metric-unit">°C</span>
-                    </div>
-                    <div class="weather-card-footer">
-                        <div class="formula-tooltip" id="formulaTooltip" title="NOAA / Rothfusz Equation">
-                            <span id="formulaText">Temp + Humidity → Heat Index</span>
+                </div>
+
+                <!-- Sensitivity Sliders -->
+                <div class="sensitivity-panel" style="margin-bottom: 24px;">
+                    <div class="sensitivity-body-grid">
+                        <div class="sensitivity-mode-selector">
+                            <label class="sens-label">Operational Sensitivity Level:</label>
+                            <div class="sens-button-group">
+                                <button type="button" class="btn-sens-preset" data-sens="standard">
+                                    <span class="sens-icon">🟢</span>
+                                    <span class="sens-name">Standard</span>
+                                    <span class="sens-sub">35% Conf | 4s Cooldown</span>
+                                </button>
+                                <button type="button" class="btn-sens-preset" data-sens="high">
+                                    <span class="sens-icon">🟡</span>
+                                    <span class="sens-name">High Sensitivity</span>
+                                    <span class="sens-sub">25% Conf | 2.5s Cooldown</span>
+                                </button>
+                                <button type="button" class="btn-sens-preset active" data-sens="ultra">
+                                    <span class="sens-icon">🔴</span>
+                                    <span class="sens-name">Ultra Strict</span>
+                                    <span class="sens-sub">15% Conf | 1.5s Instant</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="sensitivity-sliders-wrapper">
+                            <div class="sens-slider-card">
+                                <div class="slider-header-flex">
+                                    <span class="slider-title">🎯 Neural Confidence Threshold:</span>
+                                    <span class="slider-val" id="lblConfidenceVal">15% (0.15)</span>
+                                </div>
+                                <input type="range" id="sliderConfidence" min="0.10" max="0.65" step="0.05" value="0.15" class="custom-range-slider">
+                                <div class="slider-scale">
+                                    <span>Ultra Strict (10%)</span>
+                                    <span>Balanced (35%)</span>
+                                    <span>Conservative (65%)</span>
+                                </div>
+                            </div>
+
+                            <div class="sens-slider-card">
+                                <div class="slider-header-flex">
+                                    <span class="slider-title">⏱️ Violation Alert Cooldown:</span>
+                                    <span class="slider-val" id="lblCooldownVal">1.5s</span>
+                                </div>
+                                <input type="range" id="sliderCooldown" min="0.5" max="8.0" step="0.5" value="1.5" class="custom-range-slider">
+                                <div class="slider-scale">
+                                    <span>Instant (0.5s)</span>
+                                    <span>Moderate (3.0s)</span>
+                                    <span>Spaced (8.0s)</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 4. Thermal Risk Level Card -->
-                <div class="weather-card" id="cardRiskLevel">
-                    <div class="weather-card-top">
-                        <span class="weather-card-label">OCCUPATIONAL RISK LEVEL</span>
-                        <span class="weather-card-icon">⚠️</span>
+                <!-- 14 Interactive AI Modules Cards Grid -->
+                <div class="modules-master-grid">
+                    
+                    <!-- 1. Hardhat / Helmet -->
+                    <div class="module-config-card" data-toggle="helmet_check">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🪖</div>
+                            <div class="module-info">
+                                <h4>Hardhat / Helmet Inspection</h4>
+                                <p>Real-time headgear compliance monitoring with instant audible alert.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterHelmet" checked>
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">OSHA 1926.100</span>
+                            <span style="color: var(--text-dim);">Worker Level</span>
+                        </div>
                     </div>
-                    <div class="weather-card-value">
-                        <span class="risk-badge-display risk-low" id="valRiskBadge">🟢 LOW</span>
-                    </div>
-                    <div class="weather-card-footer">
-                        <span class="sub-metric" id="valRiskCondition">Clear Atmospheric State</span>
-                    </div>
-                </div>
 
+                    <!-- 2. High-Vis Vest -->
+                    <div class="module-config-card" data-toggle="vest_check">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🦺</div>
+                            <div class="module-info">
+                                <h4>High-Vis Reflective Vest</h4>
+                                <p>Fluorescent neon vest & retroreflective strip verification.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterVest" checked>
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">ANSI/ISEA 107</span>
+                            <span style="color: var(--text-dim);">Torso Check</span>
+                        </div>
+                    </div>
+
+                    <!-- 3. Height Safety & Harness -->
+                    <div class="module-config-card" data-toggle="height_safety">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🏗️</div>
+                            <div class="module-info">
+                                <h4>Height Safety & Harness Tether</h4>
+                                <p>Verifies fall-arrest harness & lanyard tethering at elevated decks.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterHarness">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">OSHA 1926 Sub M</span>
+                            <span style="color: var(--text-dim);">> 2m Elevation</span>
+                        </div>
+                    </div>
+
+                    <!-- 4. Worker Fall & Man-Down -->
+                    <div class="module-config-card" data-toggle="fall_detection">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🚨</div>
+                            <div class="module-info">
+                                <h4>Worker Fall & Man-Down</h4>
+                                <p>Immediate horizontal posture collapse and immobility detection.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterFall" checked>
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">EMERGENCY SOS</span>
+                            <span style="color: var(--text-dim);">< 100ms Trigger</span>
+                        </div>
+                    </div>
+
+                    <!-- 5. Crane Suspended Load Drop Zone -->
+                    <div class="module-config-card" data-toggle="suspended_load">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">📦</div>
+                            <div class="module-info">
+                                <h4>Crane Suspended Load Drop Zone</h4>
+                                <p>Projects dynamic radar drop shadow and warns workers in line-of-fire.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterSuspended">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">OSHA 1926.1425</span>
+                            <span style="color: var(--text-dim);">Line of Fire</span>
+                        </div>
+                    </div>
+
+                    <!-- 6. Confined Space Headcount -->
+                    <div class="module-config-card" data-toggle="confined_space">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🚪</div>
+                            <div class="module-info">
+                                <h4>Confined Space Headcount</h4>
+                                <p>Automated entry/exit counting & max stay-duration watchdog.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterConfined">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">OSHA 1910.146</span>
+                            <span style="color: var(--text-dim);">Tank / Manhole</span>
+                        </div>
+                    </div>
+
+                    <!-- 7. Hot Work & Fire Extinguisher -->
+                    <div class="module-config-card" data-toggle="hot_work">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">⚡</div>
+                            <div class="module-info">
+                                <h4>Hot Work & Extinguisher Watch</h4>
+                                <p>Detects welding sparks and verifies certified extinguisher proximity (< 5m).</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterHotWork">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">NFPA 51B 35-Foot</span>
+                            <span style="color: var(--text-dim);">< 5m Proximity</span>
+                        </div>
+                    </div>
+
+                    <!-- 8. Fire & Smoke Rapid Detection -->
+                    <div class="module-config-card" data-toggle="fire_detection">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🔥</div>
+                            <div class="module-info">
+                                <h4>Fire & Smoke Combustion</h4>
+                                <p>Early thermal chromatic combustion analysis for fire and smoke.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterFire" checked>
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">CRITICAL SIREN</span>
+                            <span style="color: var(--text-dim);">Multi-Spectral</span>
+                        </div>
+                    </div>
+
+                    <!-- 9. Trench Setback Margin -->
+                    <div class="module-config-card" data-toggle="trench_safety">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">⚠️</div>
+                            <div class="module-info">
+                                <h4>Trench Margin & Spoil Pile</h4>
+                                <p>Enforces 2-foot setback buffer to prevent excavation cave-in hazards.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterTrench">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">OSHA 1926 Sub P</span>
+                            <span style="color: var(--text-dim);">Cave-in Guard</span>
+                        </div>
+                    </div>
+
+                    <!-- 10. Night Shift Security Guard -->
+                    <div class="module-config-card" data-toggle="night_mode">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🌙</div>
+                            <div class="module-info">
+                                <h4>Night Guard Perimeter Lockdown</h4>
+                                <p>Tactical perimeter lockdown with immediate after-hours intruder alerts.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterNight">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">SECURITY LOCK</span>
+                            <span style="color: var(--text-dim);">Perimeter Defense</span>
+                        </div>
+                    </div>
+
+                    <!-- 11. Machinery Proximity Buffer -->
+                    <div class="module-config-card" data-toggle="proximity_detection">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🚜</div>
+                            <div class="module-info">
+                                <h4>Heavy Machinery Proximity Buffer</h4>
+                                <p>Dynamic buffer zone between workers and moving plant machinery.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterProximity" checked>
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">COLLISION AVOIDANCE</span>
+                            <span style="color: var(--text-dim);">< 140px Radius</span>
+                        </div>
+                    </div>
+
+                    <!-- 12. Cellphone Distraction -->
+                    <div class="module-config-card" data-toggle="phone_detection">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">📱</div>
+                            <div class="module-info">
+                                <h4>Cellphone Distraction in Work Area</h4>
+                                <p>Flags smartphone usage in designated heavy equipment zones.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterPhone" checked>
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">DISTRACTION ZERO</span>
+                            <span style="color: var(--text-dim);">Operator Safety</span>
+                        </div>
+                    </div>
+
+                    <!-- 13. Virtual Danger Geofence -->
+                    <div class="module-config-card" data-toggle="danger_zone">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🛑</div>
+                            <div class="module-info">
+                                <h4>Virtual Danger Geofencing</h4>
+                                <p>Custom exclusion perimeter with multi-channel alarms on breach.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterDanger">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">GEOFENCE BREACH</span>
+                            <span style="color: var(--text-dim);">Exclusion Area</span>
+                        </div>
+                    </div>
+
+                    <!-- 14. Turnstile Smart Gate Mode -->
+                    <div class="module-config-card" data-toggle="gate_mode">
+                        <div class="module-card-top">
+                            <div class="module-icon-wrap">🚪</div>
+                            <div class="module-info">
+                                <h4>Turnstile Smart Gate HUD</h4>
+                                <p>Entry checkpoint HUD with automated ACCESS GRANTED / DENIED tags.</p>
+                            </div>
+                            <label class="switch-wrap">
+                                <input type="checkbox" id="chkMasterGate">
+                                <span class="slider-round"></span>
+                            </label>
+                        </div>
+                        <div class="module-card-footer">
+                            <span class="module-status-badge active">ACCESS CONTROL</span>
+                            <span style="color: var(--text-dim);">Checkpoint 1</span>
+                        </div>
+                    </div>
+
+                </div>
             </div>
 
-            <!-- Explainable Anomaly Reasoning Box -->
-            <div class="explainable-reason-box">
-                <div class="explainable-header">
-                    <span class="explainable-icon">🧠</span>
-                    <h4>Explainable Anomaly & Risk Breakdown</h4>
-                    <span class="explainable-sub">Real-time multi-factor reasoning</span>
+
+            <!-- ========================================================== -->
+            <!-- VIEW 7: ALL SAFETY FEATURES & AI INSPECTION SUITE          -->
+            <!-- ========================================================== -->
+            <div class="dashboard-view" id="view-features">
+                <div class="view-header-strip">
+                    <div class="view-header-left">
+                        <h2>✨ All Safety Features & AI Capabilities Suite</h2>
+                        <p>Complete enterprise catalog of all 14 real-time vision AI, physical barrier, and telemetry modules protecting your plant.</p>
+                    </div>
+                    <div class="view-header-actions">
+                        <button type="button" class="btn btn-sm btn-accent" onclick="document.querySelector('[data-target=\'view-modules\']').click();">
+                            🎛️ Configure in Master Module
+                        </button>
+                    </div>
                 </div>
-                <div class="explainable-body">
-                    <ul class="reason-bullets" id="reasonsListContainer">
-                        <li>Connecting to real-time meteorological feed...</li>
-                    </ul>
-                    <div class="reason-conclusion" id="conclusionContainer">
-                        Environmental conditions are stable.
+
+                <div class="features-suite-grid">
+                    <!-- 1. Hardhat / Helmet -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🪖</div>
+                            <div class="feature-card-meta">
+                                <h3>Hardhat & Headgear Compliance</h3>
+                                <span class="feature-osha-badge">OSHA 1926.100</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Sub-second neural detection of mandatory safety helmets on every worker on the floor. Flags missing or improperly worn headgear with instant audible alerts.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Worker Level</span>
+                        </div>
+                    </div>
+
+                    <!-- 2. High-Vis Vest -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🦺</div>
+                            <div class="feature-card-meta">
+                                <h3>High-Vis Neon Reflective Vest</h3>
+                                <span class="feature-osha-badge">ANSI / ISEA 107</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Dual fluorescent neon chromatic analysis and retroreflective band verification across torso regions to ensure peak visibility around heavy plant equipment.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Torso Check</span>
+                        </div>
+                    </div>
+
+                    <!-- 3. Height Safety & Harness -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🏗️</div>
+                            <div class="feature-card-meta">
+                                <h3>Height Safety & Harness Tether</h3>
+                                <span class="feature-osha-badge">OSHA 1926 Subpart M</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Detects elevated operations (>2m) on scaffolding, ladders, and open ledges. Verifies that fall-arrest harnesses and shock-absorbing lanyards are anchored.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">> 2m Elevation</span>
+                        </div>
+                    </div>
+
+                    <!-- 4. Worker Fall & Man-Down -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🚨</div>
+                            <div class="feature-card-meta">
+                                <h3>Worker Fall & Man-Down SOS</h3>
+                                <span class="feature-osha-badge">EMERGENCY SOS (<100ms)</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Instantaneous aspect-ratio collapse detection tracking sudden horizontal body positioning and prolonged immobility to dispatch emergency rescue personnel.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Instant Trigger</span>
+                        </div>
+                    </div>
+
+                    <!-- 5. Crane Suspended Load Drop Zone -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">📦</div>
+                            <div class="feature-card-meta">
+                                <h3>Crane Suspended Load Drop Zone</h3>
+                                <span class="feature-osha-badge">OSHA 1926.1425</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Dynamically tracks overhead hooks, hoists, and rigging. Projects a real-time red radar drop zone directly onto the floor and triggers alarms if workers enter line-of-fire.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Line-of-Fire</span>
+                        </div>
+                    </div>
+
+                    <!-- 6. Confined Space Headcount -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🚪</div>
+                            <div class="feature-card-meta">
+                                <h3>Confined Space Entry & Stay Limit</h3>
+                                <span class="feature-osha-badge">OSHA 1910.146</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Maintains bidirectional digital headcount tally at manholes, tunnels, and tanks. Enforces maximum entry capacity and sounds siren on stay-limit expiration.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Headcount Watch</span>
+                        </div>
+                    </div>
+
+                    <!-- 7. Hot Work & Welding Fire Watch -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">⚡</div>
+                            <div class="feature-card-meta">
+                                <h3>Hot Work & Welding Fire Watch</h3>
+                                <span class="feature-osha-badge">NFPA 51B (35-ft Rule)</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Monitors high-luminosity welding sparks and torch operations. Automatically verifies that dedicated fire extinguishers and standby fire-watch personnel are present within 35 feet.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">NFPA 51B</span>
+                        </div>
+                    </div>
+
+                    <!-- 8. Heavy Machinery & Forklift Proximity -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🚜</div>
+                            <div class="feature-card-meta">
+                                <h3>Plant Machinery Collision Avoidance</h3>
+                                <span class="feature-osha-badge">PROXIMITY RADAR</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Computes real-time Euclidean distance vectors between pedestrian workers and heavy equipment (forklifts, excavators, dumpers), triggering distance warnings if radius breaches.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">< 140px Radius</span>
+                        </div>
+                    </div>
+
+                    <!-- 9. Trench Excavation Edge Collapse Margin -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">⚠️</div>
+                            <div class="feature-card-meta">
+                                <h3>Trench Edge Collapse Margin</h3>
+                                <span class="feature-osha-badge">OSHA 1926 Subpart P</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Monitors excavation lip boundaries. Flags heavy vehicles, excavators, and uncontained spoil piles placed within the critical collapse setback safety envelope.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Setback Safe</span>
+                        </div>
+                    </div>
+
+                    <!-- 10. Mobile Phone Distraction -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">📱</div>
+                            <div class="feature-card-meta">
+                                <h3>Mobile Phone Operator Distraction</h3>
+                                <span class="feature-osha-badge">ZERO DISTRACTION POLICY</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Identifies smartphone handset handling and screen gazing while walking near active machinery, gantries, or high-risk construction loading decks.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Distraction Zero</span>
+                        </div>
+                    </div>
+
+                    <!-- 11. Virtual Danger Zone Geofence -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🛑</div>
+                            <div class="feature-card-meta">
+                                <h3>Virtual Danger Zone Geofencing</h3>
+                                <span class="feature-osha-badge">EXCLUSION BARRIER</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Supervisors draw custom polygonal exclusion zones on camera feeds. Point-in-polygon math instantly detects perimeter incursions and sounds high-decibel alarms.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Custom Polygon</span>
+                        </div>
+                    </div>
+
+                    <!-- 12. Fire, Flame & Smoke Detection -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🔥</div>
+                            <div class="feature-card-meta">
+                                <h3>Fire, Flame & Smoke Optical Detection</h3>
+                                <span class="feature-osha-badge">RAPID THERMAL HAZARD</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Multi-channel color space extraction (HSV & YCrCb) combined with temporal flicker tracking to detect nascent fires and smoke plumes before smoke alarms trigger.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Thermal & Optical</span>
+                        </div>
+                    </div>
+
+                    <!-- 13. Tactical Night Vision Guard -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🌙</div>
+                            <div class="feature-card-meta">
+                                <h3>Night Vision Tactical Guard</h3>
+                                <span class="feature-osha-badge">LOW-LIGHT ENHANCEMENT</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Amplifies gamma curves, edge contrasts, and IR feeds for night shifts (6 PM - 6 AM), ensuring uninterrupted AI neural tracking during dim and low-light operations.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">24/7 Night Shift</span>
+                        </div>
+                    </div>
+
+                    <!-- 14. Turnstile Smart Gate Access Inspector -->
+                    <div class="feature-suite-card">
+                        <div class="feature-card-header-flex">
+                            <div class="feature-card-icon-box">🚪</div>
+                            <div class="feature-card-meta">
+                                <h3>Smart Turnstile PPE Access Gate</h3>
+                                <span class="feature-osha-badge">PHYSICAL ACCESS CONTROL</span>
+                            </div>
+                        </div>
+                        <p class="feature-card-desc">Front-line checkpoint barrier HUD. Authorizes worker badge-in only when 100% compliance (Helmet + Vest + Harness) is verified by the vision AI engine.</p>
+                        <div class="feature-card-bottom">
+                            <span class="feature-status-live"><span class="dot"></span> 100% OPERATIONAL</span>
+                            <span style="font-size: 0.72rem; color: var(--text-dim);">Access Checkpoint</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Interactive Historical Chart Section -->
-            <div class="weather-chart-container">
-                <div class="chart-header">
-                    <h4>📈 Real-Time Environmental Trends (Temperature, Humidity & Heat Index vs. Time)</h4>
-                    <div class="chart-legend-custom">
-                        <span class="legend-item"><span class="legend-color color-temp"></span> Temperature (°C)</span>
-                        <span class="legend-item"><span class="legend-color color-humidity"></span> Humidity (%)</span>
-                        <span class="legend-item"><span class="legend-color color-heatindex"></span> Heat Index (°C)</span>
+
+            <!-- ========================================================== -->
+            <!-- VIEW 4: ANALYTICS, SCORECARD & AUDIT REPORTS               -->
+            <!-- ========================================================== -->
+            <div class="dashboard-view" id="view-analytics">
+                <div class="view-header-strip">
+                    <div class="view-header-left">
+                        <h2>📊 Safety Analytics, Compliance Scorecard & Audits</h2>
+                        <p>Executive KPIs, site compliance grading, spatial violation heatmaps, and formal export documentation.</p>
+                    </div>
+                    <div class="view-header-actions">
+                        <a href="/api/export/pdf" download="Safety_Compliance_Audit_Report.pdf" class="btn btn-primary">📑 Download Executive PDF Report</a>
+                        <a href="/api/export/presentation" download="SafeVision_AI_Presentation.pdf" class="btn btn-outline">📽️ Presentation PDF</a>
+                        <a href="/api/export/csv" download="safety_incidents.csv" class="btn btn-outline">📊 Export CSV Incident Logs</a>
                     </div>
                 </div>
-                <div class="chart-wrapper">
-                    <canvas id="weatherHistoryChart"></canvas>
+
+                <!-- Executive Scorecard Summary -->
+                <div class="analytics-summary-grid">
+                    <div class="analytics-card" style="border-color: rgba(16, 185, 129, 0.4);">
+                        <div class="analytics-card-header">
+                            <span>Site Safety Grade</span>
+                            <span>🏆</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <div class="analytics-grade-badge" id="scGradeBadge">A+</div>
+                            <div>
+                                <div class="analytics-big-number" id="scScoreNumber">98.5</div>
+                                <span style="font-size: 0.76rem; color: var(--text-muted);">out of 100.0 Score</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <div class="analytics-card-header">
+                            <span>Zero-Accident Streak</span>
+                            <span>📅</span>
+                        </div>
+                        <div class="analytics-big-number" id="scStreakDays">14</div>
+                        <span style="font-size: 0.76rem; color: var(--text-muted);">Consecutive Safe Work Days</span>
+                    </div>
+
+                    <div class="analytics-card">
+                        <div class="analytics-card-header">
+                            <span>OSHA Benchmark</span>
+                            <span>⚖️</span>
+                        </div>
+                        <div class="analytics-big-number" id="scOshaRate">99.2%</div>
+                        <span style="font-size: 0.76rem; color: var(--text-muted);">Regulatory Compliance Rate</span>
+                    </div>
+
+                    <div class="analytics-card">
+                        <div class="analytics-card-header">
+                            <span>Incident Clearance</span>
+                            <span>⚡</span>
+                        </div>
+                        <div class="analytics-big-number" style="color: #38BDF8;">100%</div>
+                        <span style="font-size: 0.76rem; color: var(--text-muted);">Audited & Handled</span>
+                    </div>
+                </div>
+
+                <!-- 2D Spatial Incident Heatmap -->
+                <div class="card" style="padding: 20px; margin-bottom: 24px;">
+                    <div class="heatmap-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                        <h4 style="font-size: 1.05rem; color: #F8FAFC;">🗺️ 2D Floor Plan Spatial Incident Heatmap</h4>
+                        <div class="heatmap-legend" style="display: flex; gap: 12px; font-size: 0.76rem;">
+                            <span class="legend-dot dot-ppe" style="color: #F59E0B;">● PPE Helmet/Vest</span>
+                            <span class="legend-dot dot-fall" style="color: #EF4444;">● Man-Down Fall</span>
+                            <span class="legend-dot dot-perimeter" style="color: #EC4899;">● Geofence</span>
+                            <span class="legend-dot dot-fire" style="color: #EF4444;">● Fire Hazard</span>
+                            <span class="legend-dot dot-distraction" style="color: #8B5CF6;">● Cellphone</span>
+                        </div>
+                    </div>
+                    <div class="heatmap-canvas-container" style="background: #0B1120; border-radius: 8px; border: 1px solid var(--border-color); padding: 10px; display: flex; justify-content: center;">
+                        <canvas id="heatmapCanvas" width="700" height="340" style="max-width: 100%; border-radius: 6px;"></canvas>
+                    </div>
+                    <small class="helper-text" style="display: block; margin-top: 8px; text-align: center; color: var(--text-dim);">
+                        💡 Coordinates are automatically extracted from AI Edge camera bounding box locations.
+                    </small>
                 </div>
             </div>
 
-        </div>
-    </section>
+
+            <!-- ========================================================== -->
+            <!-- VIEW 5: AI SAFETY COPILOT & ENVIRONMENTAL INTELLIGENCE      -->
+            <!-- ========================================================== -->
+            <div class="dashboard-view" id="view-copilot">
+                <div class="view-header-strip">
+                    <div class="view-header-left">
+                        <h2>🤖 AI Safety Copilot & Environmental Intelligence</h2>
+                        <p>Conversational OSHA / ISO-45001 safety advisor combined with real-time site meteorological conditions.</p>
+                    </div>
+                    <div class="view-header-actions">
+                        <button class="btn btn-sm btn-accent" id="btnRefreshWeatherNow">
+                            <span id="refreshSpinner" class="spinner-icon">🔄</span> Refresh Weather Feed
+                        </button>
+                    </div>
+                </div>
+
+                <div class="copilot-vertical-flow">
+                    
+                    <!-- 1. AI Safety Copilot Console (Compact Height) -->
+                    <div class="copilot-console-card">
+                        <div class="card-header" style="background: rgba(15, 23, 42, 0.85); border-bottom: 1px solid var(--border-color); padding: 10px 18px;">
+                            <div class="header-left">
+                                <span style="font-size: 1.1rem;">🤖</span>
+                                <strong style="color: #F8FAFC;">SafeVision AI Copilot Console</strong>
+                                <span class="badge-edition">GEMINI POWERED</span>
+                            </div>
+                        </div>
+
+                        <!-- Chat Messages Container (Bound to app.js) -->
+                        <div class="copilot-messages-stage" id="copilotChatBody">
+                            <div class="chat-msg ai-msg">
+                                <div class="msg-avatar">🤖</div>
+                                <div class="msg-content">
+                                    <p><strong>Hello Site Supervisor!</strong> I am your AI Safety Copilot. Ask me about OSHA regulations, site violation trends, heat stress protocols, or specific camera zones.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Suggested Quick Question Chips -->
+                        <div class="copilot-chips-strip">
+                            <button type="button" class="copilot-quick-chip" data-query="Give me an executive safety summary of today's shift.">📋 Shift Summary</button>
+                            <button type="button" class="copilot-quick-chip" data-query="Explain OSHA 1926 harness requirements for working at heights.">🏗️ Scaffolding Rules</button>
+                            <button type="button" class="copilot-quick-chip" data-query="What is the OSHA rule for crane suspended loads and drop zones?">📦 Crane Drop Zones</button>
+                            <button type="button" class="copilot-quick-chip" data-query="What are the stay limits and permit rules for confined spaces?">🚪 Confined Spaces</button>
+                            <button type="button" class="copilot-quick-chip" data-query="What is the 35-foot rule for welding hot work and fire extinguishers?">⚡ Hot Work Watch</button>
+                        </div>
+
+                        <!-- Chat Input Form -->
+                        <form id="copilotForm" class="copilot-input-bar">
+                            <input type="text" id="copilotInput" placeholder="Ask AI Safety Copilot about compliance, hazards or incidents..." autocomplete="off" style="flex: 1; background: #0B1120; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 14px; color: #FFFFFF; font-size: 0.88rem;">
+                            <button type="submit" class="btn btn-accent" id="btnSendCopilot">Send &rarr;</button>
+                        </form>
+                    </div>
+
+                    <!-- 2. Environmental & Microclimate Details (Uske Niche Details) -->
+                    <div class="weather-details-card card">
+                        <div class="weather-panel-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.06); padding-bottom: 12px; margin-bottom: 14px;">
+                            <div class="weather-title-block" style="display: flex; align-items: center; gap: 10px;">
+                                <div class="weather-badge-icon" style="font-size: 1.5rem;">🌤️</div>
+                                <div>
+                                    <h3 style="font-size: 1.05rem; color: #F8FAFC; margin: 0;">Site Environmental & Microclimate Station</h3>
+                                    <div class="weather-location-meta" style="font-size: 0.74rem; color: var(--text-muted); margin-top: 3px;">
+                                        <span id="weatherLocationName">📍 Industrial Site</span>
+                                        <span class="sep">•</span>
+                                        <span id="weatherDataSourceTag" class="source-tag">Live API</span>
+                                        <span class="sep">•</span>
+                                        <span id="weatherLastUpdatedText">--:--</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 4 Weather Metric KPI Cards in Horizontal Row -->
+                        <div class="weather-kpi-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;">
+                            <!-- Temperature -->
+                            <div class="weather-card">
+                                <div class="weather-card-top">
+                                    <span class="weather-card-label">TEMPERATURE</span>
+                                    <span class="weather-card-icon">🌡️</span>
+                                </div>
+                                <div class="weather-card-value">
+                                    <span class="metric-val" id="valTemperature">--.-</span>
+                                    <span class="metric-unit">°C</span>
+                                </div>
+                                <div class="weather-card-footer">
+                                    <span class="status-pill status-normal" id="badgeTempStatus">Optimal</span>
+                                    <span class="trend-indicator" id="trendIndicator">→ Steady</span>
+                                </div>
+                            </div>
+
+                            <!-- Humidity -->
+                            <div class="weather-card">
+                                <div class="weather-card-top">
+                                    <span class="weather-card-label">HUMIDITY</span>
+                                    <span class="weather-card-icon">💧</span>
+                                </div>
+                                <div class="weather-card-value">
+                                    <span class="metric-val" id="valHumidity">--</span>
+                                    <span class="metric-unit">%</span>
+                                </div>
+                                <div class="weather-card-footer">
+                                    <span class="status-pill status-info" id="badgeHumidityStatus">Comfortable</span>
+                                    <span class="sub-metric" id="valWindPressure">💨 0 km/h</span>
+                                </div>
+                            </div>
+
+                            <!-- Heat Index -->
+                            <div class="weather-card highlight-weather-card">
+                                <div class="weather-card-top">
+                                    <span class="weather-card-label">HEAT INDEX</span>
+                                    <span class="weather-card-icon">☀️</span>
+                                </div>
+                                <div class="weather-card-value">
+                                    <span class="metric-val" id="valHeatIndex">--.-</span>
+                                    <span class="metric-unit">°C</span>
+                                </div>
+                                <div class="weather-card-footer">
+                                    <span id="formulaText" style="font-size: 0.68rem; color: var(--text-dim);">NOAA Rothfusz</span>
+                                </div>
+                            </div>
+
+                            <!-- Risk Level -->
+                            <div class="weather-card" id="cardRiskLevel">
+                                <div class="weather-card-top">
+                                    <span class="weather-card-label">RISK LEVEL</span>
+                                    <span class="weather-card-icon">⚠️</span>
+                                </div>
+                                <div class="weather-card-value">
+                                    <span class="risk-badge-display risk-low" id="valRiskBadge">🟢 LOW</span>
+                                </div>
+                                <div class="weather-card-footer">
+                                    <span class="sub-metric" id="valRiskCondition">Optimal Work State</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Anomaly Reasoning Box -->
+                        <div class="explainable-reason-box" style="margin-bottom: 0;">
+                            <div class="explainable-header">
+                                <span class="explainable-icon">🧠</span>
+                                <h4>Reasoning Breakdown & Occupational Directives</h4>
+                            </div>
+                            <div class="explainable-body">
+                                <ul class="reason-bullets" id="reasonsListContainer">
+                                    <li>Meteorological parameters within OSHA comfort zones.</li>
+                                </ul>
+                                <div class="reason-conclusion" id="conclusionContainer" style="margin-top: 6px; font-size: 0.78rem; color: #10B981;">
+                                    Safe for unrestricted outdoor and elevated work.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Environmental Trends History Graph (Uske Niche Graph) -->
+                    <div class="weather-chart-container card" style="padding: 18px 20px;">
+                        <div class="chart-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h4 style="font-size: 0.92rem; color: #F8FAFC; margin: 0; display: flex; align-items: center; gap: 8px;">
+                                <span>📈</span> Environmental Trends History (Temp, Humidity & Heat Index)
+                            </h4>
+                            <span style="font-size: 0.74rem; color: var(--text-muted);">Real-time telemetry continuous sync</span>
+                        </div>
+                        <div class="chart-wrapper" style="height: 240px; position: relative;">
+                            <canvas id="weatherHistoryChart"></canvas>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+
+            <!-- ========================================================== -->
+            <!-- VIEW 6: SYSTEM SETTINGS & HARDWARE HUB                     -->
+            <!-- ========================================================== -->
+            <div class="dashboard-view" id="view-settings">
+                <div class="view-header-strip">
+                    <div class="view-header-left">
+                        <h2>⚙️ System Settings & Edge Hardware Hub</h2>
+                        <p>Configure Telegram notifications, physical siren tones, camera networking, and edge inference diagnostics.</p>
+                    </div>
+                </div>
+
+                <div class="settings-cards-grid">
+                    
+                    <!-- 1. Mobile Telegram Card -->
+                    <div class="settings-card">
+                        <div class="settings-card-header">
+                            <span class="icon">📱</span>
+                            <div>
+                                <h3>Mobile Telegram Alerts</h3>
+                                <p>Instant photo snapshot dispatch to your phone</p>
+                            </div>
+                        </div>
+                        <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 10px; font-size: 0.74rem;">
+                            <strong>⚡ 1-Minute Setup:</strong> Create bot with <code>@BotFather</code> & find ID with <code>@userinfobot</code>.
+                        </div>
+                        <form id="telegramForm" style="display: flex; flex-direction: column; gap: 12px;">
+                            <div class="form-group checkbox-group">
+                                <label style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="checkbox" id="chkTelegramEnable">
+                                    <strong>Enable Telegram Incident Dispatch</strong>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label style="font-size: 0.78rem;">Bot Token:</label>
+                                <div style="display: flex; gap: 6px;">
+                                    <input type="password" id="tgBotTokenInput" class="form-control" placeholder="123456789:ABCdefGHIjkLMNopQRstUVw" autocomplete="off" style="flex: 1;">
+                                    <button type="button" id="btnToggleTokenVisibility" class="btn btn-sm btn-outline">👁️</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label style="font-size: 0.78rem;">Numeric Chat ID:</label>
+                                <input type="text" id="tgChatIdInput" class="form-control" placeholder="e.g. 987654321">
+                            </div>
+                            <div style="display: flex; gap: 8px; margin-top: 4px;">
+                                <button type="submit" class="btn btn-primary" style="flex: 1;">Save Telegram</button>
+                                <button type="button" class="btn btn-outline" id="btnTestTelegram">🚀 Test Phone</button>
+                                <button type="button" class="btn btn-outline" id="btnSimulateTelegram">🧪 Demo</button>
+                            </div>
+                            <div id="tgTestStatus" class="test-status" style="font-size: 0.78rem;"></div>
+                        </form>
+                    </div>
+
+                    <!-- 2. Audible Siren & Audio Engine -->
+                    <div class="settings-card">
+                        <div class="settings-card-header">
+                            <span class="icon">🔊</span>
+                            <div>
+                                <h3>Audible Siren & Voice Alerts</h3>
+                                <p>Hardware audio siren tones and Text-to-Speech warnings</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 14px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>Master Siren Status:</span>
+                                <span class="status-pill status-normal" style="background: rgba(16, 185, 129, 0.2); color: #10B981;">ARMED</span>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button type="button" class="btn btn-outline btn-audio-test" id="btnAudioTest" onclick="triggerSpeakerSirenTest(this);" style="flex: 1;">🔊 Test Speaker Siren</button>
+                                <button type="button" class="btn btn-secondary" onclick="document.getElementById('btnMuteToggle').click();" style="flex: 1;">🔔 Toggle Mute</button>
+                            </div>
+                            <small style="color: var(--text-muted); font-size: 0.74rem;">
+                                💡 Spoken voice warnings (e.g., <i>"Alert: No helmet in Zone 1"</i>) automatically play through connected 3.5mm Aux or Bluetooth speakers.
+                            </small>
+                        </div>
+                    </div>
+
+                    <!-- 3. Camera Network Setup -->
+                    <div class="settings-card">
+                        <div class="settings-card-header">
+                            <span class="icon">📹</span>
+                            <div>
+                                <h3>Camera Stream Manager</h3>
+                                <p>IP camera URLs, DroidCam, and multi-zone routing</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <p style="font-size: 0.8rem; color: var(--text-muted);">Configure custom industrial zones and bind each camera to RTSP IP or DroidCam feeds.</p>
+                            <button type="button" class="btn btn-accent" onclick="document.getElementById('btnOpenZoneModal').click();">
+                                ⚙️ Open Zone & Camera Configurator
+                            </button>
+                            <button type="button" class="btn btn-outline" id="btnConnectDroidCam" onclick="openDroidCamModal();">
+                                📱 Connect DroidCam Wi-Fi
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 4. Edge Hardware Diagnostics -->
+                    <div class="settings-card">
+                        <div class="settings-card-header">
+                            <span class="icon">💻</span>
+                            <div>
+                                <h3>Edge AI Diagnostics</h3>
+                                <p>Hardware acceleration and real-time inference status</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem;">
+                            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                                <span style="color: var(--text-dim);">Neural Model:</span>
+                                <strong style="color: #38BDF8;">YOLO11-nano (yolo11n.pt)</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                                <span style="color: var(--text-dim);">Device Hardware:</span>
+                                <strong>Intel Core Ultra 5 CPU</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                                <span style="color: var(--text-dim);">Frame Latency:</span>
+                                <strong style="color: #10B981;">~37.4 ms (~27 FPS)</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                                <span style="color: var(--text-dim);">Box Smoothing:</span>
+                                <strong style="color: #10B981;">Active (EMA Filter)</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+                                <span style="color: var(--text-dim);">JPEG Quality:</span>
+                                <strong>88% HD Stream</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div> <!-- End app-main -->
+
+    </div> <!-- End app-shell -->
 
     <!-- ================= MODALS & DRAWERS ================= -->
 
@@ -1753,7 +2707,69 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=3.1"></script>
+    <!-- Enterprise View Navigation & Tab Controller -->
+    <script>
+    (function() {
+        const navItems = document.querySelectorAll('.sidebar-nav-item');
+        const views = document.querySelectorAll('.dashboard-view');
+        const navPageTitle = document.getElementById('navPageTitle');
+
+        const VIEW_TITLES = {
+            'view-live': '📹 Live Vision & Camera Hub',
+            'view-incidents': '🚨 Incident Management & Evidence Dispatch',
+            'view-modules': '🎛️ Master Module Control & Policy Hub',
+            'view-features': '✨ All Safety Features & AI Capabilities Suite',
+            'view-analytics': '📊 Safety Analytics, Compliance Scorecard & Audits',
+            'view-copilot': '🤖 AI Safety Copilot & Environmental Station',
+            'view-settings': '⚙️ System Settings & Edge Hardware Hub'
+        };
+
+        function switchView(targetViewId) {
+            views.forEach(v => v.classList.remove('active'));
+            navItems.forEach(n => n.classList.remove('active'));
+
+            const targetView = document.getElementById(targetViewId);
+            const targetNav = document.querySelector(`.sidebar-nav-item[data-target="${targetViewId}"]`);
+
+            if (targetView) targetView.classList.add('active');
+            if (targetNav) targetNav.classList.add('active');
+            if (navPageTitle && VIEW_TITLES[targetViewId]) {
+                navPageTitle.innerText = VIEW_TITLES[targetViewId];
+            }
+
+            localStorage.setItem('safevision_active_tab', targetViewId);
+            if (history.replaceState) {
+                history.replaceState(null, null, '#' + targetViewId.replace('view-', ''));
+            }
+
+            // Trigger window resize so Chart.js & Heatmap canvas re-render correctly
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+        }
+
+        window.switchDashboardView = switchView;
+
+        navItems.forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = this.getAttribute('data-target');
+                if (target) switchView(target);
+            });
+        });
+
+        // Initialize from URL hash or localStorage
+        window.addEventListener('DOMContentLoaded', () => {
+            const hash = window.location.hash.replace('#', '');
+            const saved = localStorage.getItem('safevision_active_tab');
+            if (hash && document.getElementById('view-' + hash)) {
+                switchView('view-' + hash);
+            } else if (saved && document.getElementById(saved)) {
+                switchView(saved);
+            }
+        });
+    })();
+    </script>
+
+    <script src="/static/js/app.js?v=3.4"></script>
 </body>
 </html>
 

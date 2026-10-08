@@ -70,5 +70,12 @@ class TestZonesAndMultiCamera(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(camera_manager.focused_cam_id, "cam_02")
 
+    def test_camera_snapshot(self):
+        # Wait a moment for worker frame if needed
+        res = self.client.get("/api/snapshot/cam_02")
+        self.assertIn(res.status_code, [200, 404])
+        if res.status_code == 200:
+            self.assertEqual(res.headers.get("content-type"), "image/jpeg")
+
 if __name__ == "__main__":
     unittest.main()

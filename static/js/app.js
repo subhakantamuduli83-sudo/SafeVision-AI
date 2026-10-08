@@ -133,6 +133,13 @@ document.addEventListener('DOMContentLoaded', () => {
             kpiWorkers.innerText = live.total_workers ?? 0;
             kpiCompliantWorkers.innerText = live.compliant_workers ?? 0;
 
+            // Edge Hardware Accelerator Dynamic Status
+            const processorEl = document.getElementById('sidebarProcessorVal');
+            if (processorEl && data.intel_mode) {
+                processorEl.innerText = data.intel_mode.includes('NPU') ? 'Intel(R) NPU + GPU ⚡' : data.intel_mode;
+                processorEl.title = data.intel_mode;
+            }
+
             // Violations
             kpiViolations.innerText = live.violations_count ?? 0;
             if (live.active_violations && live.active_violations.length > 0) {
@@ -695,14 +702,57 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ================= 7. Audio Controls =================
-    btnAudioTest.addEventListener('click', async () => {
-        btnAudioTest.innerText = '🔊 Testing...';
-        const formData = new FormData();
-        formData.append('trigger_test', 'true');
-        await fetch('/api/alarm/toggle', { method: 'POST', body: formData });
+    window.triggerSpeakerSirenTest = async function(btn) {
+        const targetBtn = btn || document.getElementById('btnAudioTest');
+        const origText = targetBtn ? targetBtn.innerText : '🔊 Test Speaker Siren';
+        if (targetBtn) {
+            targetBtn.innerText = '🔊 Siren Active...';
+            targetBtn.classList.add('playing');
+            targetBtn.disabled = true;
+        }
+
+        // 1. Play local browser Web Audio synthesizer
+        try {
+            if (typeof playClientAcousticTone === 'function') {
+                playClientAcousticTone('master');
+            } else if (typeof window.playClientAcousticTone === 'function') {
+                window.playClientAcousticTone('master');
+            }
+        } catch (e) {
+            console.warn('[Audio Siren] Web Audio error:', e);
+        }
+
+        // 2. Play server hardware speaker / TTS alert
+        try {
+            const formData = new FormData();
+            formData.append('trigger_test', 'true');
+            await fetch('/api/alarm/toggle', { method: 'POST', body: formData });
+        } catch (err) {
+            console.warn('[Audio Siren] Toggle alarm error:', err);
+        }
+
+        // 3. Reset button after 2.2 seconds
         setTimeout(() => {
-            btnAudioTest.innerText = '🔊 Test Speaker';
-        }, 2000);
+            if (targetBtn) {
+                targetBtn.innerText = origText;
+                targetBtn.classList.remove('playing');
+                targetBtn.disabled = false;
+            }
+        }, 2200);
+    };
+
+    if (btnAudioTest) {
+        btnAudioTest.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.triggerSpeakerSirenTest(btnAudioTest);
+        });
+    }
+
+    document.querySelectorAll('.btn-audio-test').forEach(b => {
+        b.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.triggerSpeakerSirenTest(b);
+        });
     });
 
     btnMuteToggle.addEventListener('click', async () => {
@@ -792,17 +842,63 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ================= 10. Modals Management =================
-    btnCameraSettings.addEventListener('click', () => {
-        cameraModal.style.display = 'flex';
-    });
+    window.openDroidCamModal = function() {
+        if (cameraModal) {
+            cameraModal.style.display = 'flex';
+        }
+        if (sourceSelect) {
+            sourceSelect.value = 'droidcam-wifi';
+            sourceSelect.dispatchEvent(new Event('change'));
+        }
+        if (urlInputLabel) {
+            urlInputLabel.innerText = 'DroidCam Wi-Fi Stream URL:';
+        }
+        if (modalUrlInput) {
+            modalUrlInput.value = 'http://192.168.1.15:4747/video';
+            modalUrlInput.placeholder = 'http://192.168.1.15:4747/video';
+            setTimeout(() => {
+                modalUrlInput.focus();
+                modalUrlInput.select();
+            }, 100);
+        }
+        if (cameraHelperText) {
+            cameraHelperText.innerHTML = '💡 <b>DroidCam Wi-Fi:</b> Open DroidCam on phone, connect to same Wi-Fi/Hotspot, and enter the IP shown on phone (e.g. <code>http://192.168.1.15:4747/video</code>).';
+        }
+    };
 
-    btnCloseModal.addEventListener('click', () => {
-        cameraModal.style.display = 'none';
-    });
+    const btnConnectDroidCam = document.getElementById('btnConnectDroidCam');
+    if (btnConnectDroidCam) {
+        btnConnectDroidCam.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.openDroidCamModal();
+        });
+    }
 
-    btnCancelModal.addEventListener('click', () => {
-        cameraModal.style.display = 'none';
-    });
+    if (btnCameraSettings) {
+        btnCameraSettings.addEventListener('click', () => {
+            cameraModal.style.display = 'flex';
+        });
+    }
+
+    if (btnCloseModal) {
+        btnCloseModal.addEventListener('click', () => {
+            cameraModal.style.display = 'none';
+        });
+    }
+
+    if (btnCancelModal) {
+        btnCancelModal.addEventListener('click', () => {
+            cameraModal.style.display = 'none';
+        });
+    }
+
+    if (cameraModal) {
+        cameraModal.addEventListener('click', (e) => {
+            if (e.target === cameraModal) {
+                cameraModal.style.display = 'none';
+            }
+        });
+    }
 
     const urlInputLabel = document.getElementById('urlInputLabel');
     const cameraHelperText = document.getElementById('cameraHelperText');
@@ -839,17 +935,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     cameraConfigForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const submitBtn = cameraConfigForm.querySelector('button[type="submit"]');
+        const origBtnText = submitBtn ? submitBtn.innerText : 'Apply & Connect';
+        if (submitBtn) {
+            submitBtn.innerText = 'Connecting...';
+            submitBtn.disabled = true;
+        }
+
         const sourceVal = modalUrlInput.value.trim();
         const zoneVal = zoneInput.value.trim();
 
-        const formData = new FormData();
-        formData.append('source', sourceVal);
-        formData.append('zone', zoneVal);
+        try {
+            const formData = new FormData();
+            formData.append('source', sourceVal);
+            formData.append('zone', zoneVal);
 
-        await fetch('/api/settings', { method: 'POST', body: formData });
-        cameraModal.style.display = 'none';
-        quickSourceInput.value = sourceVal;
-        liveVideoFeed.src = `/video_feed?t=${new Date().getTime()}`;
+            await fetch('/api/settings', { method: 'POST', body: formData });
+            cameraModal.style.display = 'none';
+            if (quickSourceInput) quickSourceInput.value = sourceVal;
+            if (liveVideoFeed) liveVideoFeed.src = `/video_feed?t=${new Date().getTime()}`;
+
+            // Switch to Live Vision view so user immediately sees their camera
+            if (typeof window.switchDashboardView === 'function') {
+                window.switchDashboardView('view-live');
+            }
+        } catch (err) {
+            console.error('Camera connection error:', err);
+            alert('Could not apply camera settings: ' + err.message);
+        } finally {
+            if (submitBtn) {
+                submitBtn.innerText = origBtnText;
+                submitBtn.disabled = false;
+            }
+        }
     });
 
     // Snapshot Modal
@@ -889,49 +1007,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function appendCopilotMessage(sender, text, mode) {
-        const msgDiv = document.createElement('div');
-        msgDiv.className = sender === 'user' ? 'chat-msg user-msg' : 'chat-msg ai-msg';
-        
-        const avatar = document.createElement('div');
-        avatar.className = 'msg-avatar';
-        avatar.innerText = sender === 'user' ? '👤' : '🤖';
+        const bodies = document.querySelectorAll('#copilotChatBody');
+        bodies.forEach(body => {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = sender === 'user' ? 'chat-msg user-msg' : 'chat-msg ai-msg';
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'msg-avatar';
+            avatar.innerText = sender === 'user' ? '👤' : '🤖';
 
-        const content = document.createElement('div');
-        content.className = 'msg-content';
+            const content = document.createElement('div');
+            content.className = 'msg-content';
 
-        // Parse simple markdown headers and bullets
-        let formatted = text
-            .replace(/### (.*?)\n/g, '<h3>$1</h3>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/`(.*?)`/g, '<code>$1</code>')
-            .replace(/• (.*?)\n/g, '<li>$1</li>')
-            .replace(/\n\n/g, '<br><br>');
+            // Parse simple markdown headers and bullets
+            let formatted = text
+                .replace(/### (.*?)\n/g, '<h3>$1</h3>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/`(.*?)`/g, '<code>$1</code>')
+                .replace(/• (.*?)\n/g, '<li>$1</li>')
+                .replace(/\n\n/g, '<br><br>');
 
-        if (mode) {
-            formatted += `<br><small style="opacity: 0.6; font-size: 0.72rem;">Engine: ${mode}</small>`;
-        }
+            if (mode) {
+                formatted += `<br><small style="opacity: 0.6; font-size: 0.72rem;">Engine: ${mode}</small>`;
+            }
 
-        content.innerHTML = formatted;
-        msgDiv.appendChild(avatar);
-        msgDiv.appendChild(content);
-        copilotChatBody.appendChild(msgDiv);
-        copilotChatBody.scrollTop = copilotChatBody.scrollHeight;
+            content.innerHTML = formatted;
+            msgDiv.appendChild(avatar);
+            msgDiv.appendChild(content);
+            body.appendChild(msgDiv);
+            body.scrollTop = body.scrollHeight;
+        });
     }
 
     async function sendCopilotQuery(query) {
         if (!query || !query.trim()) return;
         const q = query.trim();
         appendCopilotMessage('user', q);
-        copilotInput.value = '';
+        document.querySelectorAll('#copilotInput, .copilot-input-bar input').forEach(inp => inp.value = '');
 
-        // Add thinking placeholder
-        const thinkingDiv = document.createElement('div');
-        thinkingDiv.className = 'chat-msg ai-msg';
-        thinkingDiv.id = 'copilotThinking';
-        thinkingDiv.innerHTML = '<div class="msg-avatar">🤖</div><div class="msg-content"><em>Analyzing factory telemetry & OSHA guidelines...</em></div>';
-        copilotChatBody.appendChild(thinkingDiv);
-        copilotChatBody.scrollTop = copilotChatBody.scrollHeight;
+        // Add thinking placeholder to all chat bodies
+        const bodies = document.querySelectorAll('#copilotChatBody');
+        bodies.forEach(body => {
+            const thinkingDiv = document.createElement('div');
+            thinkingDiv.className = 'chat-msg ai-msg copilot-thinking-item';
+            thinkingDiv.innerHTML = '<div class="msg-avatar">🤖</div><div class="msg-content"><em>Analyzing factory telemetry & OSHA guidelines...</em></div>';
+            body.appendChild(thinkingDiv);
+            body.scrollTop = body.scrollHeight;
+        });
 
         try {
             const formData = new FormData();
@@ -939,28 +1062,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/copilot/chat', { method: 'POST', body: formData });
             const data = await res.json();
             
-            const thinking = document.getElementById('copilotThinking');
-            if (thinking) thinking.remove();
-
+            document.querySelectorAll('.copilot-thinking-item').forEach(el => el.remove());
             appendCopilotMessage('ai', data.response, data.mode);
         } catch (e) {
-            const thinking = document.getElementById('copilotThinking');
-            if (thinking) thinking.remove();
+            document.querySelectorAll('.copilot-thinking-item').forEach(el => el.remove());
             appendCopilotMessage('ai', 'Error connecting to Safety Copilot engine. Please retry.');
         }
     }
 
-    if (copilotForm) {
-        copilotForm.addEventListener('submit', (e) => {
+    // Support all Copilot chat bodies and input forms
+    document.querySelectorAll('#copilotForm, .copilot-input-bar').forEach(form => {
+        form.addEventListener('submit', (e) => {
             e.preventDefault();
-            sendCopilotQuery(copilotInput.value);
+            const inp = form.querySelector('input');
+            if (inp && inp.value) {
+                sendCopilotQuery(inp.value);
+            }
         });
-    }
+    });
 
-    chipBtns.forEach(btn => {
+    // Support both .chip-btn and .copilot-quick-chip
+    document.querySelectorAll('.chip-btn, .copilot-quick-chip').forEach(btn => {
         btn.addEventListener('click', () => {
             const q = btn.getAttribute('data-query');
-            sendCopilotQuery(q);
+            if (q) sendCopilotQuery(q);
         });
     });
 
@@ -1869,120 +1994,285 @@ document.addEventListener('DOMContentLoaded', () => {
             const ctx = getAudioContext();
             if (!ctx) return;
             const now = ctx.currentTime;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-
             const key = (featureKey || '').toLowerCase();
-            if (key === 'fire') {
-                // European two-tone emergency warble (950Hz alternating with 650Hz)
-                osc.type = 'sawtooth';
-                gain.gain.setValueAtTime(0.2, now);
-                for (let i = 0; i < 4; i++) {
-                    osc.frequency.setValueAtTime(950, now + i * 0.35);
-                    osc.frequency.setValueAtTime(650, now + i * 0.35 + 0.18);
+
+            function createSynth(type = 'sine') {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = type;
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                return { osc, gain };
+            }
+
+            // 1. MASTER SPEAKER / GENERAL TEST: Industrial Factory Air Horn / Klaxon (Sweeping Brass Power)
+            if (key === 'general_test' || key === 'master' || key === 'speaker' || key === 'test') {
+                const { osc: osc1, gain: g1 } = createSynth('sawtooth');
+                const { osc: osc2, gain: g2 } = createSynth('sawtooth');
+                
+                g1.gain.setValueAtTime(0.01, now);
+                g1.gain.linearRampToValueAtTime(0.35, now + 0.12);
+                osc1.frequency.setValueAtTime(280, now);
+                osc1.frequency.exponentialRampToValueAtTime(550, now + 0.28);
+                osc1.frequency.setValueAtTime(550, now + 0.75);
+                g1.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+
+                g2.gain.setValueAtTime(0.01, now);
+                g2.gain.linearRampToValueAtTime(0.25, now + 0.12);
+                osc2.frequency.setValueAtTime(440, now);
+                osc2.frequency.exponentialRampToValueAtTime(825, now + 0.28);
+                osc2.frequency.setValueAtTime(825, now + 0.75);
+                g2.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+
+                osc1.start(now);
+                osc2.start(now);
+                osc1.stop(now + 1.25);
+                osc2.stop(now + 1.25);
+            }
+            // 2. HEAT STRESS & NOAA THERMAL HAZARD: Undulating Solar Heatwave Shimmer (Slow Warm Ambient Warble)
+            else if (key === 'heat' || key === 'thermal' || key === 'weather') {
+                const { osc, gain } = createSynth('sine');
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(0.3, now + 0.08);
+                
+                for (let i = 0; i < 3; i++) {
+                    const t = now + i * 0.38;
+                    osc.frequency.setValueAtTime(587.33, t);
+                    osc.frequency.exponentialRampToValueAtTime(440.00, t + 0.22);
+                    osc.frequency.setValueAtTime(440.00, t + 0.35);
                 }
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.45);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
                 osc.start(now);
-                osc.stop(now + 1.5);
-            } else if (key === 'fall') {
-                // Low medical descending distress frequency (460Hz down to 240Hz)
-                osc.type = 'triangle';
-                gain.gain.setValueAtTime(0.3, now);
-                osc.frequency.setValueAtTime(460, now);
-                osc.frequency.exponentialRampToValueAtTime(240, now + 1.1);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.25);
+                osc.stop(now + 1.25);
+            }
+            // 3. MACHINERY & FORKLIFT COLLISION BUFFER: Rapid Reversing Sonar Collision Chirp (Staccato 4-Ping)
+            else if (key === 'proximity' || key === 'forklift' || key === 'machinery') {
+                const { osc, gain } = createSynth('triangle');
+                const pings = [1350, 1500, 1650, 1850];
+                gain.gain.setValueAtTime(0, now);
+                pings.forEach((freq, idx) => {
+                    const t = now + idx * 0.11;
+                    osc.frequency.setValueAtTime(freq, t);
+                    gain.gain.setValueAtTime(0.35, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+                });
                 osc.start(now);
-                osc.stop(now + 1.3);
-            } else if (key === 'harness') {
-                // Sharp high-pitch double pulse (1350Hz)
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(1350, now);
-                gain.gain.setValueAtTime(0.25, now);
-                gain.gain.setValueAtTime(0, now + 0.2);
-                gain.gain.setValueAtTime(0.25, now + 0.32);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+                osc.stop(now + 0.55);
+            }
+            // 4. FIRE & SMOKE HAZARD: Full European Two-Tone Evacuation Wail (980Hz <-> 650Hz Alternating)
+            else if (key === 'fire' || key === 'smoke') {
+                const { osc, gain } = createSynth('sawtooth');
+                gain.gain.setValueAtTime(0.28, now);
+                for (let i = 0; i < 4; i++) {
+                    const t = now + i * 0.36;
+                    osc.frequency.setValueAtTime(980, t);
+                    osc.frequency.setValueAtTime(650, t + 0.18);
+                }
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.55);
                 osc.start(now);
-                osc.stop(now + 0.65);
-            } else if (key === 'crane' || key === 'suspended_load') {
-                // Triple staccato drop hazard horn (1150Hz)
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(1150, now);
-                gain.gain.setValueAtTime(0.25, now);
-                gain.gain.setValueAtTime(0, now + 0.16);
-                gain.gain.setValueAtTime(0.25, now + 0.26);
-                gain.gain.setValueAtTime(0, now + 0.42);
-                gain.gain.setValueAtTime(0.25, now + 0.52);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.78);
+                osc.stop(now + 1.6);
+            }
+            // 5. WORKER FALL & MAN-DOWN EMERGENCY: Descending Medical Distress Code Glide (920Hz -> 240Hz + Heart-Thump)
+            else if (key === 'fall' || key === 'collapse') {
+                const { osc, gain } = createSynth('triangle');
+                gain.gain.setValueAtTime(0.35, now);
+                osc.frequency.setValueAtTime(920, now);
+                osc.frequency.exponentialRampToValueAtTime(240, now + 0.85);
+                gain.gain.exponentialRampToValueAtTime(0.05, now + 0.88);
+                
+                gain.gain.setValueAtTime(0.35, now + 0.95);
+                osc.frequency.setValueAtTime(160, now + 0.95);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.08);
+                gain.gain.setValueAtTime(0.3, now + 1.15);
+                osc.frequency.setValueAtTime(140, now + 1.15);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.35);
                 osc.start(now);
-                osc.stop(now + 0.8);
-            } else if (key === 'gate_pass') {
-                // Harmonious ascending entrance chime (C5 -> E5 -> G5 -> C6)
-                osc.type = 'sine';
-                gain.gain.setValueAtTime(0.22, now);
-                osc.frequency.setValueAtTime(523.25, now);
-                osc.frequency.setValueAtTime(659.25, now + 0.12);
-                osc.frequency.setValueAtTime(783.99, now + 0.24);
-                osc.frequency.setValueAtTime(1046.50, now + 0.36);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.7);
+                osc.stop(now + 1.4);
+            }
+            // 6. HEIGHT SAFETY & FULL-BODY HARNESS: High-Altitude Emergency Whistle Flutter (1760Hz Vibrato Burst)
+            else if (key === 'harness' || key === 'height') {
+                const { osc, gain } = createSynth('square');
+                gain.gain.setValueAtTime(0, now);
+                for (let b = 0; b < 3; b++) {
+                    const t = now + b * 0.15;
+                    osc.frequency.setValueAtTime(1650 + (b * 90), t);
+                    gain.gain.setValueAtTime(0.22, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.11);
+                }
                 osc.start(now);
-                osc.stop(now + 0.75);
-            } else if (key === 'gate_fail') {
-                // Low descending denied buzzer (320Hz -> 200Hz)
-                osc.type = 'sawtooth';
-                gain.gain.setValueAtTime(0.3, now);
-                osc.frequency.setValueAtTime(320, now);
-                gain.gain.setValueAtTime(0, now + 0.18);
-                gain.gain.setValueAtTime(0.3, now + 0.28);
-                osc.frequency.setValueAtTime(200, now + 0.28);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+                osc.stop(now + 0.55);
+            }
+            // 7. CRANE SUSPENDED LOAD DROP ZONE: Sub-Bass Overhead Foghorn Rumble (Heavy 220Hz -> 310Hz Sawtooth)
+            else if (key === 'crane' || key === 'suspended_load' || key === 'suspended') {
+                const { osc, gain } = createSynth('sawtooth');
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(0.38, now + 0.08);
+                osc.frequency.setValueAtTime(220, now);
+                osc.frequency.linearRampToValueAtTime(310, now + 0.4);
+                osc.frequency.setValueAtTime(310, now + 0.65);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.85);
                 osc.start(now);
-                osc.stop(now + 0.65);
-            } else if (key === 'helmet' || key === 'vest') {
-                // PPE rising chirp (780Hz -> 980Hz)
-                osc.type = 'sine';
-                gain.gain.setValueAtTime(0.25, now);
-                osc.frequency.setValueAtTime(780, now);
-                osc.frequency.linearRampToValueAtTime(980, now + 0.3);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+                osc.stop(now + 0.9);
+            }
+            // 8. VIRTUAL DANGER ZONE GEOFENCE: Laser Perimeter Tripwire Zaps (1250Hz -> 750Hz Rapid Zaps)
+            else if (key === 'geofence' || key === 'perimeter') {
+                const { osc, gain } = createSynth('square');
+                gain.gain.setValueAtTime(0, now);
+                for (let i = 0; i < 3; i++) {
+                    const t = now + i * 0.16;
+                    osc.frequency.setValueAtTime(1300, t);
+                    osc.frequency.exponentialRampToValueAtTime(750, t + 0.11);
+                    gain.gain.setValueAtTime(0.26, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+                }
+                osc.start(now);
+                osc.stop(now + 0.55);
+            }
+            // 9. TACTICAL NIGHT SHIFT PERIMETER GUARD: High-Speed Police Strobe Siren (1100Hz <-> 1600Hz Strobe)
+            else if (key === 'night' || key === 'night_intrusion' || key === 'intrusion') {
+                const { osc, gain } = createSynth('sawtooth');
+                gain.gain.setValueAtTime(0.28, now);
+                for (let i = 0; i < 5; i++) {
+                    const t = now + i * 0.16;
+                    osc.frequency.setValueAtTime(i % 2 === 0 ? 1550 : 1100, t);
+                }
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.9);
+                osc.start(now);
+                osc.stop(now + 0.95);
+            }
+            // 10. CONFINED SPACE HEADCOUNT & STAY-TIMER: Hollow Subterranean 3-Bell Toll (392Hz -> 330Hz -> 261Hz)
+            else if (key === 'confined' || key === 'confined_space') {
+                const { osc, gain } = createSynth('sine');
+                const bells = [392.00, 329.63, 261.63];
+                gain.gain.setValueAtTime(0, now);
+                bells.forEach((freq, idx) => {
+                    const t = now + idx * 0.28;
+                    osc.frequency.setValueAtTime(freq, t);
+                    gain.gain.setValueAtTime(0.35, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.24);
+                });
+                osc.start(now);
+                osc.stop(now + 0.95);
+            }
+            // 11. HOT WORK & FIRE EXTINGUISHER PROXIMITY: Electric Arc Spark Crackle (Rapid 1600Hz / 800Hz Toggling)
+            else if (key === 'welding' || key === 'hot_work') {
+                const { osc, gain } = createSynth('sawtooth');
+                gain.gain.setValueAtTime(0.26, now);
+                for (let i = 0; i < 8; i++) {
+                    const t = now + i * 0.07;
+                    osc.frequency.setValueAtTime(i % 2 === 0 ? 1600 : 800, t);
+                }
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.65);
+                osc.start(now);
+                osc.stop(now + 0.7);
+            }
+            // 12. TRENCH EXCAVATION MARGIN: Sub-Bass Earth Cave-in Grind Rumble (180Hz Heavy Low Sawtooth)
+            else if (key === 'trench' || key === 'trench_margin') {
+                const { osc, gain } = createSynth('sawtooth');
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(0.4, now + 0.08);
+                osc.frequency.setValueAtTime(175, now);
+                osc.frequency.linearRampToValueAtTime(195, now + 0.35);
+                osc.frequency.linearRampToValueAtTime(155, now + 0.7);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.85);
+                osc.start(now);
+                osc.stop(now + 0.9);
+            }
+            // 13. HARDHAT / SAFETY HELMET: Bright Upward Safety Chirp (650Hz -> 1250Hz Rising Sine)
+            else if (key === 'helmet' || key === 'ppe_helmet') {
+                const { osc, gain } = createSynth('sine');
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(0.3, now + 0.05);
+                osc.frequency.setValueAtTime(650, now);
+                osc.frequency.exponentialRampToValueAtTime(1250, now + 0.35);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.48);
                 osc.start(now);
                 osc.stop(now + 0.5);
-            } else if (key === 'geofence' || key === 'night') {
-                // Alternating security siren (980Hz / 1180Hz)
-                osc.type = 'sawtooth';
-                gain.gain.setValueAtTime(0.25, now);
-                osc.frequency.setValueAtTime(980, now);
-                osc.frequency.setValueAtTime(1180, now + 0.25);
-                osc.frequency.setValueAtTime(980, now + 0.5);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.75);
+            }
+            // 14. HIGH-VISIBILITY SAFETY VEST: Musical Tri-Tone Harmonic Chord (C5: 523Hz -> E5: 659Hz -> G5: 784Hz)
+            else if (key === 'vest' || key === 'ppe_vest') {
+                const { osc, gain } = createSynth('triangle');
+                gain.gain.setValueAtTime(0, now);
+                const notes = [523.25, 659.25, 783.99];
+                notes.forEach((freq, idx) => {
+                    const t = now + idx * 0.12;
+                    osc.frequency.setValueAtTime(freq, t);
+                    gain.gain.setValueAtTime(0.3, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
+                });
                 osc.start(now);
-                osc.stop(now + 0.8);
-            } else if (key === 'phone') {
-                // Triple staccato chirp (1200Hz)
-                osc.type = 'square';
-                gain.gain.setValueAtTime(0.2, now);
-                osc.frequency.setValueAtTime(1200, now);
-                gain.gain.setValueAtTime(0, now + 0.1);
-                gain.gain.setValueAtTime(0.2, now + 0.18);
-                gain.gain.setValueAtTime(0, now + 0.28);
-                gain.gain.setValueAtTime(0.2, now + 0.36);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.55);
+                osc.stop(now + 0.55);
+            }
+            // 15. CELLPHONE DISTRACTION: Digital Mobile Notification Double-Ding (1760Hz -> 2093Hz Pure Sine)
+            else if (key === 'phone') {
+                const { osc, gain } = createSynth('sine');
+                gain.gain.setValueAtTime(0, now);
+                osc.frequency.setValueAtTime(1760, now);
+                gain.gain.setValueAtTime(0.28, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.09);
+                
+                osc.frequency.setValueAtTime(2093, now + 0.12);
+                gain.gain.setValueAtTime(0.3, now + 0.12);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                
+                osc.start(now);
+                osc.stop(now + 0.4);
+            }
+            // 16. SMART TURNSTILE GATE PASS: Harmonious Ascending Arpeggio (C5 -> E5 -> G5 -> C6)
+            else if (key === 'gate_pass') {
+                const { osc, gain } = createSynth('sine');
+                const chords = [523.25, 659.25, 783.99, 1046.50];
+                gain.gain.setValueAtTime(0, now);
+                chords.forEach((freq, idx) => {
+                    const t = now + idx * 0.11;
+                    osc.frequency.setValueAtTime(freq, t);
+                    gain.gain.setValueAtTime(0.25, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.14);
+                });
                 osc.start(now);
                 osc.stop(now + 0.6);
-            } else {
-                // Standard clean industrial pulse (880Hz)
-                osc.type = 'square';
-                gain.gain.setValueAtTime(0.2, now);
+            }
+            // 17. SMART TURNSTILE GATE FAIL: Harsh Low Rejection Double Buzz (330Hz -> 165Hz Sawtooth)
+            else if (key === 'gate_fail' || key === 'gate_denied') {
+                const { osc, gain } = createSynth('sawtooth');
+                gain.gain.setValueAtTime(0.35, now);
+                osc.frequency.setValueAtTime(330, now);
+                osc.frequency.exponentialRampToValueAtTime(165, now + 0.18);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+
+                gain.gain.setValueAtTime(0.35, now + 0.26);
+                osc.frequency.setValueAtTime(220, now + 0.26);
+                osc.frequency.exponentialRampToValueAtTime(140, now + 0.52);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.58);
+
+                osc.start(now);
+                osc.stop(now + 0.62);
+            }
+            // 18. AUTOPILOT AWAY MODE: System Active Confirmation Chime (880Hz -> 1320Hz)
+            else if (key === 'autopilot') {
+                const { osc, gain } = createSynth('triangle');
+                gain.gain.setValueAtTime(0.25, now);
                 osc.frequency.setValueAtTime(880, now);
+                gain.gain.setValueAtTime(0.28, now + 0.1);
+                osc.frequency.setValueAtTime(1320, now + 0.1);
                 gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
                 osc.start(now);
                 osc.stop(now + 0.45);
+            }
+            // Fallback: Clean Industrial Tone
+            else {
+                const { osc, gain } = createSynth('sine');
+                gain.gain.setValueAtTime(0.2, now);
+                osc.frequency.setValueAtTime(660, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                osc.start(now);
+                osc.stop(now + 0.4);
             }
         } catch (e) {
             console.warn('[AudioSynth Error]', e);
         }
     }
+    window.playClientAcousticTone = playClientAcousticTone;
 
     // ================= 20. Feature Showcase Gallery & Siren Testing Hub =================
     const featureGalleryModal = document.getElementById('featureGalleryModal');
@@ -2101,7 +2391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ================= 25. Industrial Zone & Multi-Camera CCTV Grid =================
-    const currentZoneBadge = document.getElementById('currentZoneBadge');
+    // (currentZoneBadge already declared at top)
     const navZoneText = document.getElementById('navZoneText');
     const zoneTabsList = document.getElementById('zoneTabsList');
     const btnViewGrid = document.getElementById('btnViewGrid');
@@ -2342,7 +2632,7 @@ document.addEventListener('DOMContentLoaded', () => {
             thumb.setAttribute('data-cam-id', cam.id);
             thumb.title = `Switch focus to ${cam.name}`;
             thumb.innerHTML = `
-                <img src="/api/stream/${encodeURIComponent(cam.id)}" alt="${escapeHtml(cam.name)}" loading="lazy">
+                <img src="/api/snapshot/${encodeURIComponent(cam.id)}" alt="${escapeHtml(cam.name)}" loading="lazy">
                 <span class="cctv-thumb-title">${escapeHtml(cam.name)}</span>
             `;
             thumb.addEventListener('click', (e) => {
@@ -2400,8 +2690,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    let activeFocusedCamId = null;
+
     async function focusOnCamera(camId) {
         try {
+            activeFocusedCamId = camId;
             const formData = new FormData();
             formData.append('cam_id', camId);
             await fetch('/api/zone/camera/focus', { method: 'POST', body: formData });
@@ -2411,12 +2704,13 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Highlight thumbnail
             document.querySelectorAll('.cctv-thumb-card').forEach(t => {
-                t.classList.remove('active-thumb');
+                const cid = t.getAttribute('data-cam-id');
+                if (cid === camId) {
+                    t.classList.add('active-thumb');
+                } else {
+                    t.classList.remove('active-thumb');
+                }
             });
-            const activeT = document.querySelector(`.cctv-thumb-card img[src*="${camId}"]`);
-            if (activeT && activeT.parentElement) {
-                activeT.parentElement.classList.add('active-thumb');
-            }
 
             // Update single video feed player
             const liveVideoFeed = document.getElementById('liveVideoFeed');
@@ -2430,16 +2724,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setViewMode(gridMode) {
         isMultiGridMode = gridMode;
+        const liveVideoFeed = document.getElementById('liveVideoFeed');
+
         if (isMultiGridMode) {
             if (cctvGridLayout) cctvGridLayout.style.display = 'grid';
             if (cctvSingleLayout) cctvSingleLayout.style.display = 'none';
             if (btnViewGrid) btnViewGrid.classList.add('active');
             if (btnViewFocus) btnViewFocus.classList.remove('active');
+
+            // Free socket by disconnecting hidden single video feed
+            if (liveVideoFeed) {
+                liveVideoFeed.src = "";
+            }
+
+            // Restore stream src for visible grid cards
+            if (cctvGridLayout) {
+                cctvGridLayout.querySelectorAll('.cctv-card').forEach(card => {
+                    const cid = card.getAttribute('data-cam-id');
+                    const img = card.querySelector('.cctv-card-img');
+                    if (img && cid && (!img.src || img.src === window.location.href || img.src.endsWith('/'))) {
+                        img.src = `/api/stream/${encodeURIComponent(cid)}`;
+                    }
+                });
+            }
         } else {
             if (cctvGridLayout) cctvGridLayout.style.display = 'none';
             if (cctvSingleLayout) cctvSingleLayout.style.display = 'flex';
             if (btnViewGrid) btnViewGrid.classList.remove('active');
             if (btnViewFocus) btnViewFocus.classList.add('active');
+
+            // Free 4 sockets by pausing hidden grid streams
+            if (cctvGridLayout) {
+                cctvGridLayout.querySelectorAll('.cctv-card-img').forEach(img => {
+                    img.src = "";
+                });
+            }
+
+            // Connect only the focused single camera
+            if (liveVideoFeed) {
+                const targetId = activeFocusedCamId || (cachedCameras[0] ? cachedCameras[0].id : 'cam_01');
+                liveVideoFeed.src = `/api/stream/${encodeURIComponent(targetId)}`;
+            }
         }
     }
 
