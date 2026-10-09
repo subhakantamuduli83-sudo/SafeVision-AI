@@ -41,6 +41,7 @@ class SafetyDetector:
         self.vest_check_enabled = True        # High-Vis Vest compliance
         self.gloves_check_enabled = True      # Industrial Protective Gloves compliance
         self.goggles_check_enabled = True     # Eye Protection / Safety Goggles compliance
+        self.shoes_check_enabled = True       # Industrial Safety Shoes / Steel-Toe Boots compliance
         self.fall_detection_enabled = True    # Fall & Man-Down Emergency
         self.fire_detection_enabled = True    # Fire & Smoke Hazard
         self.phone_detection_enabled = True   # Cellphone distraction in work zone
@@ -124,6 +125,8 @@ class SafetyDetector:
             "vest_check": self.vest_check_enabled,
             "gloves_check": self.gloves_check_enabled,
             "goggles_check": self.goggles_check_enabled,
+            "shoes_check": self.shoes_check_enabled,
+            "boots_check": self.shoes_check_enabled,
             "fall_detection": self.fall_detection_enabled,
             "fire_detection": self.fire_detection_enabled,
             "phone_detection": self.phone_detection_enabled,
@@ -206,6 +209,8 @@ class SafetyDetector:
             self.gloves_check_enabled = enabled
         elif fn in ["goggles_check", "goggles", "goggle", "glasses", "eyewear"]:
             self.goggles_check_enabled = enabled
+        elif fn in ["shoes_check", "shoes", "shoe", "boots", "boot", "footwear"]:
+            self.shoes_check_enabled = enabled
         elif fn in ["fall_detection", "fall"]:
             self.fall_detection_enabled = enabled
         elif fn in ["fire_detection", "fire"]:
@@ -969,19 +974,74 @@ class SafetyDetector:
         right_glove_ok = check_hand_gloves(rh_roi)
         has_gloves = (left_glove_ok and right_glove_ok)
 
+        # 5. Industrial Safety Footwear / Steel-Toe Shoes Check (Lower Leg & Feet ROI)
+        has_shoes = False
+        feet_roi = None
+        if kpts is not None and len(kpts) >= 17:
+            ankles = [kpts[k] for k in [15, 16] if len(kpts[k]) >= 3 and kpts[k][2] > 0.18]
+            if len(ankles) > 0:
+                min_ay = min(a[1] for a in ankles)
+                feet_y1 = max(0, min(frame.shape[0] - 8, int(min_ay - 4)))
+                feet_y2 = min(frame.shape[0], py2)
+                feet_x1 = max(0, px1)
+                feet_x2 = min(frame.shape[1], px2)
+                if (feet_y2 - feet_y1) > 8 and (feet_x2 - feet_x1) > 8:
+                    feet_roi = frame[feet_y1:feet_y2, feet_x1:feet_x2]
+
+        if feet_roi is None or feet_roi.size == 0:
+            # Fallback: bottom 14% of person bounding box
+            feet_y1 = max(0, py2 - int(p_h * 0.14))
+            feet_y2 = min(frame.shape[0], py2)
+            feet_x1 = max(0, px1 + int(p_w * 0.10))
+            feet_x2 = min(frame.shape[1], px2 - int(p_w * 0.10))
+            feet_roi = frame[feet_y1:feet_y2, feet_x1:feet_x2]
+
+        if feet_roi.size > 0:
+            hsv_feet = cv2.cvtColor(feet_roi, cv2.COLOR_BGR2HSV)
+            total_feet_px = max(1, feet_roi.shape[0] * feet_roi.shape[1])
+            
+            # Check for bare skin in feet region (bare feet, slippers, flip-flops, sandals)
+            mask_foot_skin = cv2.inRange(hsv_feet, np.array([0, 25, 60]), np.array([25, 160, 245]))
+            foot_skin_ratio = cv2.countNonZero(mask_foot_skin) / total_feet_px
+
+            # Industrial safety boots materials (Dark leather/rubber, steel-toe cap, safety yellow/orange accents)
+            mask_boot_dark = cv2.inRange(hsv_feet, np.array([0, 0, 0]), np.array([180, 255, 65]))
+            mask_boot_brown = cv2.inRange(hsv_feet, np.array([8, 60, 30]), np.array([24, 255, 140]))
+            mask_boot_hivis = cv2.inRange(hsv_feet, np.array([18, 90, 80]), np.array([40, 255, 255]))
+            
+            boot_mat = cv2.bitwise_or(mask_boot_dark, mask_boot_brown)
+            boot_mat = cv2.bitwise_or(boot_mat, mask_boot_hivis)
+            boot_px = cv2.countNonZero(boot_mat)
+            boot_ratio = boot_px / total_feet_px
+
+            # Decision:
+            # If bare foot skin is exposed (>= 16%), worker is wearing slippers / barefoot -> Violation
+            if foot_skin_ratio >= 0.16:
+                has_shoes = False
+            # If heavy closed boot material covers >= 18% of foot zone -> Compliant
+            elif boot_ratio >= 0.18:
+                has_shoes = True
+            # If low skin ratio (< 10%), default to closed shoe compliance
+            elif foot_skin_ratio < 0.10:
+                has_shoes = True
+            else:
+                has_shoes = False
+
         # Respect granular toggles
         effective_helmet = has_helmet if self.helmet_check_enabled else True
         effective_vest = has_vest if self.vest_check_enabled else True
         effective_gloves = has_gloves if self.gloves_check_enabled else True
         effective_goggles = has_goggles if self.goggles_check_enabled else True
+        effective_shoes = has_shoes if self.shoes_check_enabled else True
 
         return {
             "helmet": effective_helmet,
             "vest": effective_vest,
             "gloves": effective_gloves,
             "goggles": effective_goggles,
+            "shoes": effective_shoes,
             "harness": has_harness,
-            "compliant": effective_helmet and effective_vest and effective_gloves and effective_goggles
+            "compliant": effective_helmet and effective_vest and effective_gloves and effective_goggles and effective_shoes
         }
 
     def _check_point_in_polygon(self, point: Tuple[int, int], poly_points: np.ndarray) -> bool:
@@ -1501,6 +1561,8 @@ class SafetyDetector:
                         missing_items.append("No Gloves")
                     if self.goggles_check_enabled and not ppe_res["goggles"]:
                         missing_items.append("No Goggles")
+                    if self.shoes_check_enabled and not ppe_res["shoes"]:
+                        missing_items.append("No Safety Shoes")
                     if is_at_height and not ppe_res["harness"]:
                         missing_items.append("No Safety Harness at Height")
                         stats["height_violation"] = True
@@ -1552,19 +1614,26 @@ class SafetyDetector:
                                 self._save_incident_snapshot(annotated_frame, zone_id, f"PPE Violation ({v_desc})", "HIGH",
                                                             f"Worker missing: {v_desc}",
                                                             coord_x=norm_x, coord_y=norm_y, category="PPE")
+                            elif "No Safety Shoes" in v_desc:
+                                alarm_msg = f"Safety Notice: Industrial safety boots required in {zone_id}!"
+                                alarm_manager.trigger_alert("PPE_SHOES", alarm_msg, severity="HIGH")
+                                self._save_incident_snapshot(annotated_frame, zone_id, f"PPE Violation ({v_desc})", "HIGH",
+                                                            f"Worker missing: {v_desc}",
+                                                            coord_x=norm_x, coord_y=norm_y, category="PPE")
 
                     cv2.rectangle(annotated_frame, (px1, py1), (px2, py2), box_color, 2)
                     cv2.rectangle(annotated_frame, (px1, max(0, py1 - 25)), (px2, py1), box_color, -1)
                     cv2.putText(annotated_frame, status_label, (px1 + 5, py1 - 7),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
 
-                    # High-Tech 4-Point PPE HUD Chips: [H:OK] [V:OK] [G:OK] [E:OK]
+                    # High-Tech 5-Point PPE HUD Chips: [H:OK] [V:OK] [G:OK] [E:OK] [S:OK]
                     hud_y = min(h - 8, py2 + 18)
                     badges = [
                         ("H", ppe_res["helmet"]),
                         ("V", ppe_res["vest"]),
                         ("G", ppe_res["gloves"]),
-                        ("E", ppe_res["goggles"])
+                        ("E", ppe_res["goggles"]),
+                        ("S", ppe_res["shoes"])
                     ]
                     badge_x = px1
                     for tag, is_ok in badges:

@@ -178,6 +178,12 @@ class SafetyAlarmManager:
                 time.sleep(0.03)
                 winsound.Beep(880, 170)
 
+            # 11d. PPE - NO SAFETY SHOES / BOOTS: Ground-step dual caution pulse (D4 - G4)
+            elif "SHOE" in atype or "BOOT" in atype:
+                winsound.Beep(294, 130)
+                time.sleep(0.04)
+                winsound.Beep(392, 170)
+
             # 12. PHONE DISTRACTION: Digital mobile SMS double-ping
             elif "PHONE" in atype:
                 winsound.Beep(1760, 70)
