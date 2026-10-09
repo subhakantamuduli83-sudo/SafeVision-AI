@@ -12,7 +12,7 @@ from core.detector import SafetyDetector
 
 def test_fall():
     print("=" * 60)
-    print("[TEST] Testing Fall & Man-Down AI Engine (Ground & Bed Scenarios)")
+    print("[TEST] Testing Fall & Man-Down AI Engine (Ground & Seated Scenarios)")
     print("=" * 60)
 
     detector = SafetyDetector()
@@ -34,19 +34,42 @@ def test_fall():
 
     # Test pose skeletal angle with horizontal spine
     print("\n[Test 2] Testing horizontal spine pose calculation...")
-    # 17 keypoints: [x, y, conf]
-    kpts = np.zeros((17, 3), dtype=np.float32)
-    kpts[:, 2] = 0.8 # high confidence
+    kpts_fallen = np.zeros((17, 3), dtype=np.float32)
+    kpts_fallen[:, 2] = 0.8 # high confidence
     # Lying horizontal: Shoulders at x=200, y=300; Hips at x=340, y=305
-    kpts[5] = [190, 295, 0.85] # left shoulder
-    kpts[6] = [210, 305, 0.85] # right shoulder
-    kpts[11] = [330, 300, 0.85] # left hip
-    kpts[12] = [350, 310, 0.85] # right hip
-    kpts[0] = [150, 300, 0.90] # nose
+    kpts_fallen[5] = [190, 295, 0.85] # left shoulder
+    kpts_fallen[6] = [210, 305, 0.85] # right shoulder
+    kpts_fallen[11] = [330, 300, 0.85] # left hip
+    kpts_fallen[12] = [350, 310, 0.85] # right hip
+    kpts_fallen[0] = [150, 300, 0.90] # nose
 
-    is_valid_pose = detector._is_valid_human(test_frame, box_horizontal, kpts=kpts)
+    is_valid_pose = detector._is_valid_human(test_frame, box_horizontal, kpts=kpts_fallen)
     print(f"Pose keypoints human validation (lying horizontal): {is_valid_pose}")
     assert is_valid_pose == True, "Failed to validate horizontal pose keypoints!"
+
+    # Test 3: Normal Seated Worker (Must NOT trigger fall detection!)
+    print("\n[Test 3] Testing seated worker posture (Must NOT trigger worker down)...")
+    kpts_seated = np.zeros((17, 3), dtype=np.float32)
+    kpts_seated[:, 2] = 0.85
+    # Head at top
+    kpts_seated[0] = [320, 120, 0.90] # nose (y=120)
+    kpts_seated[1] = [310, 110, 0.90] # left eye
+    kpts_seated[2] = [330, 110, 0.90] # right eye
+    # Shoulders below head
+    kpts_seated[5] = [260, 200, 0.90] # left shoulder (y=200)
+    kpts_seated[6] = [380, 200, 0.90] # right shoulder (y=200)
+    # Hips below shoulders
+    kpts_seated[11] = [280, 360, 0.85] # left hip (y=360)
+    kpts_seated[12] = [360, 360, 0.85] # right hip (y=360)
+
+    # Verify head is above shoulders and shoulders above hips
+    sh_y = float(np.mean([kpts_seated[5][1], kpts_seated[6][1]]))
+    hd_y = float(kpts_seated[0][1])
+    hp_y = float(np.mean([kpts_seated[11][1], kpts_seated[12][1]]))
+
+    is_upright = (sh_y - hd_y > 12) and (hp_y - sh_y > 12)
+    print(f"Seated worker upright torso check (hd={hd_y}, sh={sh_y}, hp={hp_y}): {is_upright}")
+    assert is_upright == True, "Failed to identify seated worker as upright!"
 
     print("\n[OK] ALL FALL DETECTION UNIT TESTS PASSED SUCCESSFULLY!")
     print("=" * 60)

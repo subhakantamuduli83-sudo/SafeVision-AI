@@ -1396,67 +1396,104 @@ class SafetyDetector:
                 fall_reason = ""
 
                 if self.fall_detection_enabled:
-                    # Factor 1: Skeletal Pose Keypoints (YOLO11-Pose)
-                    if p_kpts is not None and len(p_kpts) >= 9:
+                    # Step 1: Detect Seated / Upright Posture (Definitive Exclusion of False Alarms)
+                    # When a worker is sitting properly at a desk or chair:
+                    # - Head is on top (hd_y is smallest in pixel coords)
+                    # - Shoulders are below head (sh_y > hd_y)
+                    # - Hips (if visible) are below shoulders (hp_y > sh_y)
+                    is_upright_or_seated = False
+                    
+                    if p_kpts is not None and len(p_kpts) >= 5:
+                        valid_head = [p_kpts[k] for k in range(min(5, len(p_kpts))) if len(p_kpts[k]) >= 3 and p_kpts[k][2] > 0.12]
                         valid_shoulders = [p_kpts[k] for k in [5, 6] if len(p_kpts[k]) >= 3 and p_kpts[k][2] > 0.12]
                         valid_hips = [p_kpts[k] for k in [11, 12] if len(p_kpts[k]) >= 3 and p_kpts[k][2] > 0.12]
-                        valid_head = [p_kpts[k] for k in range(min(5, len(p_kpts))) if len(p_kpts[k]) >= 3 and p_kpts[k][2] > 0.12]
                         valid_lower = [p_kpts[k] for k in range(13, min(17, len(p_kpts))) if len(p_kpts[k]) >= 3 and p_kpts[k][2] > 0.12]
 
-                        # Check 1A: Spine vector angle (Shoulder center to Hip center)
-                        if len(valid_shoulders) > 0 and len(valid_hips) > 0:
-                            sh_x = float(np.mean([p[0] for p in valid_shoulders]))
+                        if len(valid_head) > 0 and len(valid_shoulders) > 0:
+                            hd_y = float(np.mean([p[1] for p in valid_head]))
                             sh_y = float(np.mean([p[1] for p in valid_shoulders]))
-                            hp_x = float(np.mean([p[0] for p in valid_hips]))
-                            hp_y = float(np.mean([p[1] for p in valid_hips]))
+                            # In image coordinates, Y increases downward. Head above shoulders means sh_y > hd_y + 12px
+                            if (sh_y - hd_y) > 12:
+                                if len(valid_hips) > 0:
+                                    hp_y = float(np.mean([p[1] for p in valid_hips]))
+                                    # Shoulders above hips: normal sitting or standing posture
+                                    if (hp_y - sh_y) > 12:
+                                        is_upright_or_seated = True
+                                else:
+                                    # Desktop / webcam close-up view: head clearly above shoulders
+                                    is_upright_or_seated = True
 
-                            dx = abs(sh_x - hp_x)
-                            dy = abs(sh_y - hp_y)
+                        # Step 2: Genuine Horizontal Collapse Detection (Only if NOT sitting/upright)
+                        if not is_upright_or_seated:
+                            # Check 2A: Spine horizontal vector (Shoulder center to Hip center)
+                            if len(valid_shoulders) > 0 and len(valid_hips) > 0:
+                                sh_x = float(np.mean([p[0] for p in valid_shoulders]))
+                                sh_y = float(np.mean([p[1] for p in valid_shoulders]))
+                                hp_x = float(np.mean([p[0] for p in valid_hips]))
+                                hp_y = float(np.mean([p[1] for p in valid_hips]))
 
-                            # Standing: dy >> dx (angle ~ 65-90 deg). Lying down/fallen: dx >= dy * 0.60 or angle < 58 deg.
-                            spine_angle = math.degrees(math.atan2(dy, max(1e-3, dx)))
-                            if spine_angle < 58.0 or dx > (dy * 0.60):
-                                pose_fall = True
-                                fall_reason = f"Horizontal Spine ({int(spine_angle)} deg)"
+                                dx = abs(sh_x - hp_x)
+                                dy = abs(sh_y - hp_y)
 
-                        # Check 1B: Head and Hip level alignment (lying flat on bed or ground)
-                        if not pose_fall and len(valid_head) > 0 and len(valid_hips) > 0:
-                            hd_y = float(np.mean([p[1] for p in valid_head]))
-                            hp_y = float(np.mean([p[1] for p in valid_hips]))
-                            if abs(hd_y - hp_y) < (0.35 * max(pw, ph)):
-                                pose_fall = True
-                                fall_reason = "Head & Hip Level (Lying Flat)"
+                                # True collapse on floor: horizontal dx is significantly greater than vertical dy
+                                # Spine angle is very flat (< 32 degrees) with substantial horizontal distance (dx > 45px)
+                                spine_angle = math.degrees(math.atan2(dy, max(1e-3, dx)))
+                                if (spine_angle < 32.0 and dx > 45) or (dx > (dy * 1.6) and dx > 40):
+                                    pose_fall = True
+                                    fall_reason = f"Horizontal Spine ({int(spine_angle)} deg)"
 
-                        # Check 1C: Head and Lower body horizontal
-                        if not pose_fall and len(valid_head) > 0 and len(valid_lower) > 0:
-                            hd_y = float(np.mean([p[1] for p in valid_head]))
-                            low_y = float(np.mean([p[1] for p in valid_lower]))
-                            if abs(hd_y - low_y) < (0.42 * max(pw, ph)):
-                                pose_fall = True
-                                fall_reason = "Body Horizontal on Surface"
+                            # Check 2B: Head and Hip level alignment (lying flat on ground or surface)
+                            if not pose_fall and len(valid_head) > 0 and len(valid_hips) > 0:
+                                hd_y = float(np.mean([p[1] for p in valid_head]))
+                                hp_y = float(np.mean([p[1] for p in valid_hips]))
+                                hd_x = float(np.mean([p[0] for p in valid_head]))
+                                hp_x = float(np.mean([p[0] for p in valid_hips]))
+                                h_dx = abs(hd_x - hp_x)
+                                h_dy = abs(hd_y - hp_y)
+                                # Head & hips are roughly horizontal and separated laterally
+                                if h_dy < 38 and h_dx > 75:
+                                    pose_fall = True
+                                    fall_reason = "Head & Hip Flat Horizontal"
 
-                    # Factor 2: Bounding Box Geometry (Horizontal Body Ratio)
-                    # When lying down on bed or floor, width is comparable to or greater than height
-                    # Standing person is 0.25 to 0.60. Lying down is >= 0.86
-                    if aspect_ratio >= 0.86:
+                            # Check 2C: Head and Lower body horizontal alignment on ground
+                            if not pose_fall and len(valid_head) > 0 and len(valid_lower) > 0:
+                                hd_y = float(np.mean([p[1] for p in valid_head]))
+                                low_y = float(np.mean([p[1] for p in valid_lower]))
+                                hd_x = float(np.mean([p[0] for p in valid_head]))
+                                low_x = float(np.mean([p[0] for p in valid_lower]))
+                                hl_dx = abs(hd_x - low_x)
+                                hl_dy = abs(hd_y - low_y)
+                                if hl_dy < 45 and hl_dx > 100:
+                                    pose_fall = True
+                                    fall_reason = "Body Prone on Surface"
+
+                    # Factor 2: Bounding Box Fallback (Only when no skeletal pose or clearly horizontal body on floor)
+                    # Rejects desktop webcam upper-body boxes:
+                    # A truly fallen body without pose must have aspect_ratio >= 1.65 (very wide prone body)
+                    # AND must be positioned near the floor (center_y > 0.40 * h)
+                    box_center_y = (py1 + py2) / 2.0
+                    if not is_upright_or_seated and aspect_ratio >= 1.65 and box_center_y > (0.35 * h):
                         box_fall = True
                         if not fall_reason:
-                            fall_reason = f"Horizontal Posture (Ratio: {aspect_ratio:.2f})"
+                            fall_reason = f"Prone Geometry (Ratio: {aspect_ratio:.2f})"
 
-                    # Combine Pose and Box geometry
-                    is_fallen_candidate = (pose_fall or box_fall)
+                    # Combine candidate decision: MUST NOT be sitting or upright!
+                    is_fallen_candidate = (not is_upright_or_seated) and (pose_fall or box_fall)
 
                     if is_fallen_candidate:
                         self.fall_trackers[worker_id] = self.fall_trackers.get(worker_id, 0) + 1
                         self.fall_consecutive_frames += 1
                     else:
+                        # Rapidly decay tracker when worker is sitting or standing normally
                         if worker_id in self.fall_trackers:
-                            self.fall_trackers[worker_id] = max(0, self.fall_trackers[worker_id] - 1)
-                        self.fall_consecutive_frames = max(0, self.fall_consecutive_frames - 1)
+                            self.fall_trackers[worker_id] = max(0, self.fall_trackers[worker_id] - 2)
+                        self.fall_consecutive_frames = max(0, self.fall_consecutive_frames - 2)
 
-                    # Immediate alert trigger on confirmed fall (zero lag!)
+                    # Persistent Temporal Debounce (Industrial Safety Standard):
+                    # Require at least 6 consecutive frames (~0.5s) of sustained horizontal collapse
+                    # Eliminates single-frame jitters, quick forward leans, or stretching
                     worker_fall_count = self.fall_trackers.get(worker_id, 0)
-                    if is_fallen_candidate and (worker_fall_count >= 1 or self.fall_consecutive_frames >= 1):
+                    if is_fallen_candidate and (worker_fall_count >= 6 or self.fall_consecutive_frames >= 6):
                         is_fallen = True
                         stats["fall_detected"] = True
                         stats["violations_count"] += 1
