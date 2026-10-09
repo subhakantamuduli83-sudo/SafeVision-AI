@@ -763,6 +763,30 @@ document.addEventListener('DOMContentLoaded', () => {
         muteStatusText.innerText = isMuted ? 'MUTED' : 'ON';
     });
 
+    // 1-Click Server Shutdown Switch
+    const btnSystemShutdown = document.getElementById('btnSystemShutdown');
+    if (btnSystemShutdown) {
+        btnSystemShutdown.addEventListener('click', async () => {
+            if (confirm("Kya aap SafeVision AI ko band karna chahte hain?\n\n(Are you sure you want to stop SafeVision AI?)")) {
+                btnSystemShutdown.disabled = true;
+                btnSystemShutdown.innerText = "Stopping...";
+                try {
+                    await fetch('/api/system/shutdown', { method: 'POST' });
+                } catch (e) {
+                    // Ignore disconnect on shutdown
+                }
+                document.body.innerHTML = `
+                    <div style="height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #070d18; color: #f87171; font-family: 'Inter', sans-serif; text-align: center; padding: 24px;">
+                        <div style="font-size: 4rem; margin-bottom: 12px;">⏻</div>
+                        <h1 style="font-size: 2.2rem; margin-bottom: 8px; color: #f1f5f9;">SafeVision AI Server Stopped</h1>
+                        <p style="color: #94a3b8; font-size: 1.1rem; max-width: 480px; line-height: 1.5;">Server aur AI cameras safely band ho chuke hain. Aap is browser tab ko close kar sakte hain.</p>
+                        <button onclick="window.close()" style="margin-top: 24px; padding: 10px 24px; background: #0ea5e9; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 1rem;">Close Window</button>
+                    </div>
+                `;
+            }
+        });
+    }
+
     // ================= 8. Video Feed Watchdog =================
     function reloadFeed() {
         liveVideoFeed.src = `/video_feed?t=${new Date().getTime()}`;

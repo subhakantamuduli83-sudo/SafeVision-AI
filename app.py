@@ -638,6 +638,16 @@ async def export_csv():
     csv_content = generate_csv_report()
     return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safety_incidents.csv"})
 
+@app.post("/api/system/shutdown")
+async def shutdown_system():
+    """Gracefully terminates the AI server and Python process after brief delay."""
+    def _delayed_exit():
+        time.sleep(0.6)
+        print("\n[SafeVision AI] Shutdown requested via Web Dashboard. Server stopped.")
+        os._exit(0)
+    threading.Thread(target=_delayed_exit, daemon=True).start()
+    return {"status": "success", "message": "SafeVision AI is shutting down..."}
+
 
 if __name__ == "__main__":
     print("Starting AI Safety Compliance Server on port 8000...")
