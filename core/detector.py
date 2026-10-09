@@ -205,6 +205,7 @@ class SafetyDetector:
             self.helmet_check_enabled = enabled
         elif fn in ["vest_check", "vest"]:
             self.vest_check_enabled = enabled
+            self.shoes_check_enabled = enabled  # Coupled: Vest switch controls both Vest & Shoes together
         elif fn in ["gloves_check", "gloves", "glove"]:
             self.gloves_check_enabled = enabled
         elif fn in ["goggles_check", "goggles", "goggle", "glasses", "eyewear"]:
@@ -1027,12 +1028,12 @@ class SafetyDetector:
             else:
                 has_shoes = False
 
-        # Respect granular toggles
+        # Respect granular toggles (Safety Shoes coupled with Vest switch)
         effective_helmet = has_helmet if self.helmet_check_enabled else True
         effective_vest = has_vest if self.vest_check_enabled else True
         effective_gloves = has_gloves if self.gloves_check_enabled else True
         effective_goggles = has_goggles if self.goggles_check_enabled else True
-        effective_shoes = has_shoes if self.shoes_check_enabled else True
+        effective_shoes = has_shoes if (self.vest_check_enabled and self.shoes_check_enabled) else True
 
         return {
             "helmet": effective_helmet,
@@ -1557,12 +1558,12 @@ class SafetyDetector:
                         missing_items.append("No Helmet")
                     if self.vest_check_enabled and not ppe_res["vest"]:
                         missing_items.append("No Vest")
+                    if self.vest_check_enabled and self.shoes_check_enabled and not ppe_res["shoes"]:
+                        missing_items.append("No Safety Shoes")
                     if self.gloves_check_enabled and not ppe_res["gloves"]:
                         missing_items.append("No Gloves")
                     if self.goggles_check_enabled and not ppe_res["goggles"]:
                         missing_items.append("No Goggles")
-                    if self.shoes_check_enabled and not ppe_res["shoes"]:
-                        missing_items.append("No Safety Shoes")
                     if is_at_height and not ppe_res["harness"]:
                         missing_items.append("No Safety Harness at Height")
                         stats["height_violation"] = True
@@ -1626,15 +1627,18 @@ class SafetyDetector:
                     cv2.putText(annotated_frame, status_label, (px1 + 5, py1 - 7),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
 
-                    # High-Tech 5-Point PPE HUD Chips: [H:OK] [V:OK] [G:OK] [E:OK] [S:OK]
+                    # High-Tech PPE HUD Chips: [H:OK] [V:OK] [S:OK] [G:OK] [E:OK]
                     hud_y = min(h - 8, py2 + 18)
                     badges = [
-                        ("H", ppe_res["helmet"]),
-                        ("V", ppe_res["vest"]),
-                        ("G", ppe_res["gloves"]),
-                        ("E", ppe_res["goggles"]),
-                        ("S", ppe_res["shoes"])
+                        ("H", ppe_res["helmet"])
                     ]
+                    if self.vest_check_enabled:
+                        badges.append(("V", ppe_res["vest"]))
+                        badges.append(("S", ppe_res["shoes"]))
+                    if self.gloves_check_enabled:
+                        badges.append(("G", ppe_res["gloves"]))
+                    if self.goggles_check_enabled:
+                        badges.append(("E", ppe_res["goggles"]))
                     badge_x = px1
                     for tag, is_ok in badges:
                         b_col = (0, 180, 0) if is_ok else (0, 0, 220)
