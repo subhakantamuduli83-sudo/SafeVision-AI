@@ -73,3 +73,16 @@ python run.py
    - Walk in front of camera without helmet -> **Speaker blares audible voice alarm + snapshot appears on Laptop 2.**
    - Show fire flame -> **Critical hazard alarm triggers instantly.**
    - Click **"Export PDF Audit Report"** to show enterprise readiness.
+
+---
+
+## 📚 References
+
+1. **Industrial Safety Standards & Regulatory Compliance (OSHA & NFPA)**:
+   - **OSHA 1910 Subpart I (29 CFR 1910.132–138)**: General Industry Safety Standards for Personal Protective Equipment (PPE), defining mandatory head protection (helmets/hardhats), eye and face protection (goggles), high-visibility apparel (vests), hand protection (gloves), and protective footwear (safety shoes/boots).
+   - **OSHA 1926 Subpart M & Subpart P**: Safety and Health Regulations for Construction, governing fall protection harnesses and lifelines for elevated decks (29 CFR 1926.501) and excavation trench collapse setback margins (29 CFR 1926.651).
+   - **NFPA 51B**: Standard for Fire Prevention During Welding, Cutting, and Other Hot Work, requiring fire safety watch and designated extinguisher readiness near sparks.
+
+2. **Computer Vision Models & Edge AI Acceleration**:
+   - **Ultralytics YOLOv8 & YOLO11 Architecture**: Real-time object detection models for PPE and hazard identification, combined with YOLO11-Pose 17-keypoint skeletal tracking for worker slip, trip, and fall detection.
+   - **Intel OpenVINO Toolkit**: Deep learning runtime and model optimization framework enabling sub-100ms CPU-accelerated inference on local edge devices without high-end server GPUs.
