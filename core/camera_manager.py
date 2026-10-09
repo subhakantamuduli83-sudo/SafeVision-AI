@@ -73,11 +73,20 @@ class ThreadedCameraReader:
 
     def _drain_loop(self):
         while self.is_running:
-            if not self.cap or not self.cap.isOpened():
-                time.sleep(0.05)
+            if not self.cap or not self.is_running:
+                break
+            if not self.cap.isOpened():
+                time.sleep(0.04)
                 continue
 
-            ret, frame = self.cap.read()
+            try:
+                ret, frame = self.cap.read()
+            except Exception:
+                ret, frame = False, None
+
+            if not self.is_running:
+                break
+
             if ret and frame is not None:
                 with self.lock:
                     self.latest_frame = frame
@@ -110,13 +119,18 @@ class ThreadedCameraReader:
             return False, None, 0
 
     def release(self):
+        """Asynchronously releases the hardware capture in a background thread to prevent GUI/server lag."""
         self.is_running = False
-        if self.cap:
-            try:
-                self.cap.release()
-            except Exception:
-                pass
-            self.cap = None
+        cap_to_release = self.cap
+        self.cap = None
+        if cap_to_release:
+            def _async_release():
+                try:
+                    time.sleep(0.04) # Allow drain loop to notice is_running = False
+                    cap_to_release.release()
+                except Exception:
+                    pass
+            threading.Thread(target=_async_release, daemon=True).start()
 
 
 class SingleCameraWorker:
@@ -137,7 +151,6 @@ class SingleCameraWorker:
         self.lock = threading.Lock()
         
         self.current_frame = None
-        self.cached_jpeg = None
         self.stats = {
             "total_workers": 0,
             "compliant_workers": 0,
@@ -147,6 +160,12 @@ class SingleCameraWorker:
             "active_violations": [],
             "timestamp": "--:--:--"
         }
+
+        # Instant placeholder JPEG to prevent client stream hanging or black screens
+        init_placeholder = self._create_placeholder("Initializing stream...")
+        ret_p, jpeg_p = cv2.imencode('.jpg', init_placeholder, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        self.cached_jpeg = jpeg_p.tobytes() if ret_p else None
+
         self.last_ai_time = 0.0
         self.ai_interval = 0.08 # Ultra-responsive ~12 FPS AI evaluation powered by Intel AI Boost NPU (<22ms latency)
         self.needs_reprocess = True
@@ -169,29 +188,44 @@ class SingleCameraWorker:
     def _open_camera(self) -> Optional[ThreadedCameraReader]:
         cleaned = self._sanitize_source(self.raw_source)
         try:
-            if isinstance(cleaned, (int, str)) and (isinstance(cleaned, int) or cleaned.startswith("rtsp://") or cleaned.startswith("http://")):
-                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;2500000|buffer_size;1024000"
+            if isinstance(cleaned, (int, str)) and (isinstance(cleaned, int) or str(cleaned).startswith("rtsp://") or str(cleaned).startswith("http://")):
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;2000000|buffer_size;1024000"
+                cap = None
                 if isinstance(cleaned, int):
-                    # DirectShow for Windows USB webcams (zero latency, no freeze)
-                    cap = cv2.VideoCapture(cleaned, cv2.CAP_DSHOW)
-                    if not cap.isOpened():
-                        cap = cv2.VideoCapture(cleaned)
-                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                    cap.set(cv2.CAP_PROP_FPS, 30)
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    # DirectShow for Windows USB webcams with robust fallback
+                    try:
+                        cap = cv2.VideoCapture(cleaned, cv2.CAP_DSHOW)
+                    except Exception:
+                        cap = None
+                    if cap is None or not cap.isOpened():
+                        try:
+                            cap = cv2.VideoCapture(cleaned)
+                        except Exception:
+                            cap = None
+                    if cap and cap.isOpened():
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                        cap.set(cv2.CAP_PROP_FPS, 30)
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 else:
-                    cap = cv2.VideoCapture(cleaned)
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    try:
+                        cap = cv2.VideoCapture(cleaned)
+                        if cap and cap.isOpened():
+                            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    except Exception:
+                        cap = None
 
                 if cap and cap.isOpened():
                     return ThreadedCameraReader(cap, is_file=False)
                 return None
 
             elif isinstance(cleaned, str) and os.path.isfile(cleaned) and cleaned.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')):
-                cap = cv2.VideoCapture(cleaned)
-                if cap and cap.isOpened():
-                    return ThreadedCameraReader(cap, is_file=True)
+                try:
+                    cap = cv2.VideoCapture(cleaned)
+                    if cap and cap.isOpened():
+                        return ThreadedCameraReader(cap, is_file=True)
+                except Exception:
+                    pass
                 return None
         except Exception as e:
             print(f"[{self.name}] Camera open error: {e}")

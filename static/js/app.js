@@ -2467,33 +2467,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 lblActiveZoneName.innerText = data.active_zone_name || 'Zone 1';
             }
 
-            // 2. Render Zone Tabs Pills
+            // 2. Render Zone Tabs Pills (In-place active toggle to avoid DOM thrashing)
             if (zoneTabsList) {
-                zoneTabsList.innerHTML = '';
-                zones.forEach(z => {
-                    const pill = document.createElement('button');
-                    pill.type = 'button';
-                    pill.className = `zone-pill ${z.id === activeId ? 'active' : ''}`;
-                    pill.setAttribute('data-zone', z.id);
-                    pill.innerHTML = `
-                        <span class="pill-dot"></span> 📍 ${escapeHtml(z.name)} 
-                        <span class="cam-count-tag">${(z.cameras || []).length} Cams</span>
-                    `;
-                    pill.addEventListener('click', () => switchZone(z.id));
-                    zoneTabsList.appendChild(pill);
-                });
+                const existingPills = Array.from(zoneTabsList.querySelectorAll('.zone-pill'));
+                const existingPillIds = existingPills.map(p => p.getAttribute('data-zone'));
+                const newZoneIds = zones.map(z => z.id);
+                const pillsMatch = existingPillIds.length === newZoneIds.length && existingPillIds.every((id, i) => id === newZoneIds[i]);
 
-                // Re-add "+ Add Zone" pill
-                const addPill = document.createElement('button');
-                addPill.type = 'button';
-                addPill.className = 'btn-add-zone-pill';
-                addPill.id = 'btnQuickAddZone';
-                addPill.innerHTML = '➕ Add Zone';
-                addPill.addEventListener('click', () => {
-                    openZoneModal();
-                    if (newZoneFormBox) newZoneFormBox.style.display = 'block';
-                });
-                zoneTabsList.appendChild(addPill);
+                if (pillsMatch) {
+                    existingPills.forEach(p => {
+                        const zid = p.getAttribute('data-zone');
+                        if (zid === activeId) {
+                            p.classList.add('active');
+                        } else {
+                            p.classList.remove('active');
+                        }
+                    });
+                } else {
+                    zoneTabsList.innerHTML = '';
+                    zones.forEach(z => {
+                        const pill = document.createElement('button');
+                        pill.type = 'button';
+                        pill.className = `zone-pill ${z.id === activeId ? 'active' : ''}`;
+                        pill.setAttribute('data-zone', z.id);
+                        pill.innerHTML = `
+                            <span class="pill-dot"></span> 📍 ${escapeHtml(z.name)} 
+                            <span class="cam-count-tag">${(z.cameras || []).length} Cams</span>
+                        `;
+                        pill.addEventListener('click', () => switchZone(z.id));
+                        zoneTabsList.appendChild(pill);
+                    });
+
+                    // Re-add "+ Add Zone" pill
+                    const addPill = document.createElement('button');
+                    addPill.type = 'button';
+                    addPill.className = 'btn-add-zone-pill';
+                    addPill.id = 'btnQuickAddZone';
+                    addPill.innerHTML = '➕ Add Zone';
+                    addPill.addEventListener('click', () => {
+                        openZoneModal();
+                        if (newZoneFormBox) newZoneFormBox.style.display = 'block';
+                    });
+                    zoneTabsList.appendChild(addPill);
+                }
             }
 
             // 3. Render Modal Zone Select
@@ -2703,11 +2719,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function switchZone(zoneId) {
         try {
+            // 1. Optimistic UI update: highlight selected zone pill immediately
+            if (zoneTabsList) {
+                zoneTabsList.querySelectorAll('.zone-pill').forEach(p => {
+                    if (p.getAttribute('data-zone') === zoneId) {
+                        p.classList.add('active');
+                    } else {
+                        p.classList.remove('active');
+                    }
+                });
+            }
+
+            // 2. Disconnect previous camera video feeds so browser immediately frees HTTP sockets
+            if (cctvGridLayout) {
+                cctvGridLayout.querySelectorAll('.cctv-card-img').forEach(img => {
+                    img.src = '';
+                });
+            }
+
+            // 3. Post zone switch to backend
             const formData = new FormData();
             formData.append('zone_id', zoneId);
             const res = await fetch('/api/zones/active', { method: 'POST', body: formData });
             if (res.ok) {
-                await loadZonesAndCameras();
+                const resData = await res.json();
+                if (resData.cameras && resData.active_zone) {
+                    // Fast path: Update directly from single response without extra fetch round-trips
+                    activeZoneData = resData.active_zone;
+                    cachedCameras = resData.cameras;
+                    const focusedId = resData.focused_cam_id || (cachedCameras[0] ? cachedCameras[0].id : null);
+                    
+                    if (navZoneText) navZoneText.innerText = activeZoneData.name || 'Zone';
+                    if (lblActiveZoneName) lblActiveZoneName.innerText = activeZoneData.name || 'Zone';
+                    
+                    renderCCTVGrid(cachedCameras);
+                    renderCCTVThumbnails(cachedCameras, focusedId);
+                    renderModalCameraList(cachedCameras);
+                } else {
+                    await loadZonesAndCameras();
+                }
             }
         } catch (e) {
             console.error('[Zone Switch Error]', e);

@@ -126,9 +126,19 @@ async def video_feed(request: Request):
     )
 
 async def generate_camera_feed(request: Request, cam_id: str):
+    empty_count = 0
     while True:
         if await request.is_disconnected():
             break
+        
+        # Cleanly terminate streaming generator if camera is no longer active in zone
+        if cam_id not in camera_manager.workers:
+            empty_count += 1
+            if empty_count > 15: # ~375ms grace period for smooth UI transitions
+                break
+        else:
+            empty_count = 0
+
         frame_bytes = camera_manager.get_camera_jpeg(cam_id)
         if frame_bytes is not None:
             yield (b'--frame\r\n'
@@ -157,9 +167,16 @@ async def get_all_zones():
 
 @app.post("/api/zones/active")
 async def switch_active_zone(zone_id: str = Form(...)):
-    success = camera_manager.set_active_zone(zone_id)
-    stream_manager.zone_name = camera_manager.get_active_zone().get("name", "Zone 1 - Main Floor")
-    return {"status": "success" if success else "error", "data": camera_manager.get_all_zones()}
+    success = await asyncio.to_thread(camera_manager.set_active_zone, zone_id)
+    active_zone = camera_manager.get_active_zone()
+    stream_manager.zone_name = active_zone.get("name", "Zone 1 - Main Floor")
+    return {
+        "status": "success" if success else "error",
+        "data": camera_manager.get_all_zones(),
+        "active_zone": active_zone,
+        "cameras": camera_manager.get_active_zone_cameras_status(),
+        "focused_cam_id": camera_manager.focused_cam_id
+    }
 
 @app.post("/api/zones/add")
 async def add_new_zone(name: str = Form(...), description: str = Form("")):
