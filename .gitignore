@@ -6,7 +6,7 @@ safety_records.db
 yolov8n.pt
 best.pt
 *.jpg
-!assets/cover.jpg
+!assets/*.jpg
 !static/incidents/placeholder.jpg
 !static/images/features/*.jpg
 .vscode/
